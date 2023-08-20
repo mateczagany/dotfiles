@@ -1,3 +1,10 @@
+" Plug 'https://github.com/python-mode/python-mode' { 'for': 'python' }
+
+" source ~/.vimrc
+
+set sneak
+set quickscope
+
 let mapleader = " "
 
 nnoremap <C-d> <C-d>zz
