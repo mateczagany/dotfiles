@@ -56,3 +56,6 @@ nmap <, :action MoveElementLeft<CR>
 nmap >, :action MoveElementRight<CR>
 
 nmap <leader>gr :action Vcs.RollbackChangedLines<CR>
+
+
+vmap <leader>rc :action CommentByLineComment<CR>

@@ -8,6 +8,7 @@ lvim.plugins = {
 }
 
 vim.opt.relativenumber = true
+vim.opt.showtabline = 0
 
 lvim.keys.normal_mode["S"] = "<Plug>Lightspeed_S"
 lvim.keys.normal_mode["<Tab>"] = ":bnext<cr>"
