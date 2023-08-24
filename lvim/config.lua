@@ -13,3 +13,6 @@ vim.opt.showtabline = 0
 lvim.keys.normal_mode["S"] = "<Plug>Lightspeed_S"
 lvim.keys.normal_mode["<Tab>"] = ":bnext<cr>"
 lvim.keys.normal_mode["<S-Tab>"] = ":bprev<cr>"
+
+vim.cmd("nnoremap <C-u> <C-u>zz")
+vim.cmd("nnoremap <C-d> <C-d>zz")
