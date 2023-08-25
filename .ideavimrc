@@ -2,8 +2,11 @@
 
 " source ~/.vimrc
 
+Plug 'preservim/nerdtree'
+
 set sneak
 set quickscope
+set NERDTree
 
 let mapleader = " "
 
@@ -28,15 +31,21 @@ nmap <leader>= :action EditorResetFontSize<CR>
 nnoremap <c-o> :action Back<cr>
 nnoremap <c-i> :action Forward<cr>
 
-nmap <leader>e :action GotoFile<CR>
+" nmap <leader>e :action GotoFile<CR>
 nmap <leader>a :action FindInPath<CR>
 nmap gr :action ShowUsages<CR>
 nmap gi :action GotoImplementation<CR>
+nmap gd :action VimGotoDeclaration<CR>
 nmap gs :action GotoSuperMethod<CR>
+map gc :action CommentByLineComment<CR>
+
+nmap <leader>lr :action RenameElement<CR>
+nmap <leader>lj :action GotoPreviousError<CR>
+nmap <leader>lk :action GotoNextError<CR>
+nmap <leader>lf :action ReformatCode<CR>
 
 nmap <C-p> :action ParameterInfo<CR>
 imap <C-p> <C-o>:action ParameterInfo<CR>
-nmap <leader>n :action GotoNextError<CR>
 map gh <Action>(ShowErrorDescription)
 
 
@@ -55,7 +64,7 @@ nmap <leader>f  :action ReformatCode<CR>
 nmap <, :action MoveElementLeft<CR>
 nmap >, :action MoveElementRight<CR>
 
-nmap <leader>gr :action Vcs.RollbackChangedLines<CR>
+nmap <leader>bf :action RecentFiles<CR>
 
-
-vmap <leader>rc :action CommentByLineComment<CR>
+" NERDTree
+nmap <leader>e :NERDTreeToggle<CR>
