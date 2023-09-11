@@ -1,0 +1,64 @@
+# change focus
+alt - h : yabai -m window --focus west
+alt - j : yabai -m window --focus south
+alt - k : yabai -m window --focus north
+alt - l : yabai -m window --focus east
+
+# shift window in current workspace
+alt + shift - h : yabai -m window --swap west || $(yabai -m window --display west; yabai -m display --focus west)
+alt + shift - j : yabai -m window --swap south || $(yabai -m window --display south; yabai -m display --focus south)
+alt + shift - k : yabai -m window --swap north || $(yabai -m window --display north; yabai -m display --focus north)
+alt + shift - l : yabai -m window --swap east || $(yabai -m window --display east; yabai -m display --focus east)
+# alternatively, use the arrow keys
+alt + shift - left : yabai -m window --swap west || $(yabai -m window --display west; yabai -m display --focus west)
+alt + shift - down : yabai -m window --swap south || $(yabai -m window --display south; yabai -m display --focus south)
+alt + shift - up : yabai -m window --swap north || $(yabai -m window --display north; yabai -m display --focus north)
+alt + shift - right : yabai -m window --swap east || $(yabai -m window --display east; yabai -m display --focus east)
+
+# move focused window to next/prev workspace
+alt + shift - 1 : yabai -m window --space 1
+alt + shift - 2 : yabai -m window --space 2
+alt + shift - 3 : yabai -m window --space 3
+alt + shift - 4 : yabai -m window --space 4
+alt + shift - 5 : yabai -m window --space 5
+alt + shift - 6 : yabai -m window --space 6
+alt + shift - 7 : yabai -m window --space 7
+alt + shift - 8 : yabai -m window --space 8
+alt + shift - 9 : yabai -m window --space 9
+
+# focus on workspace
+# alt - 1 : osascript -e 'tell application "System Events" to key code 18 using control down'
+# alt - 2 : osascript -e 'tell application "System Events" to key code 19 using control down'
+# alt - 3 : osascript -e 'tell application "System Events" to key code 20 using control down'
+
+alt - d : yabai -m window --toggle split
+
+# increase window size
+ctrl + alt - h : yabai -m window --resize left:-40:0
+ctrl + alt - j : yabai -m window --resize bottom:0:40
+ctrl + alt - k : yabai -m window --resize top:0:-40
+ctrl + alt - l : yabai -m window --resize right:40:0
+
+# decrease window size
+ctrl + alt + cmd - h : yabai -m window --resize left:40:0
+ctrl + alt + cmd - j : yabai -m window --resize bottom:0:-40
+ctrl + alt + cmd - k : yabai -m window --resize top:0:40
+ctrl + alt + cmd - l : yabai -m window --resize right:-40:0
+
+# change layout of desktop
+alt - e : yabai -m space --layout bsp
+# alt - l : yabai -m space --layout float
+alt - s : yabai -m space --layout stack
+
+# cycle through stack windows
+alt - p : yabai -m window --focus stack.next || yabai -m window --focus stack.first
+alt - n : yabai -m window --focus stack.prev || yabai -m window --focus stack.last
+
+alt - f : yabai -m window --toggle zoom-fullscreen
+
+# open terminal
+# alt - return : open -n /Applications/Alacritty.app
+
+alt - 1 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app | contains("Firefox")) and (."has-focus" | not))' | jq '.id' | head -n 1)
+alt - 2 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app | contains("Alacritty")) and (."has-focus" | not))' | jq '.id' | head -n 1)
+alt - 0 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app | contains("Slack")) and (."has-focus" | not))' | jq '.id' | head -n 1)
