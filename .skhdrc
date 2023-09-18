@@ -31,7 +31,14 @@ alt + shift - 9 : yabai -m window --space 9
 # alt - 2 : osascript -e 'tell application "System Events" to key code 19 using control down'
 # alt - 3 : osascript -e 'tell application "System Events" to key code 20 using control down'
 
+# Change split type of window
 alt - d : yabai -m window --toggle split
+
+# Balance current space
+alt - b : yabai -m space --balance
+
+# Rotate 90 degrees clockwise
+alt - r : yabai -m space --rotate 90
 
 # increase window size
 ctrl + alt - h : yabai -m window --resize left:-40:0
