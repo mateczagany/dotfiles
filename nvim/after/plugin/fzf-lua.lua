@@ -17,5 +17,5 @@ vim.keymap.set('n', '<leader>fc', fzf.git_commits, {})
 
 vim.keymap.set('n', 'gr', fzf.lsp_references, {})
 vim.keymap.set('n', 'gi', fzf.lsp_implementations, {})
-vim.keymap.set('n', 'la', fzf.lsp_code_actions, {})
-vim.keymap.set('n', 'ls', fzf.lsp_live_workspace_symbols, {})
+vim.keymap.set('n', '<leader>la', fzf.lsp_code_actions, {})
+vim.keymap.set('n', '<leader>ls', fzf.lsp_live_workspace_symbols, {})
