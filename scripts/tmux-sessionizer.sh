@@ -4,7 +4,8 @@ if [[ $# -eq 1 ]]; then
     selected=$1
 else
     files=$(find ~/work/repos ~/dev/repos ~/dev/go -mindepth 1 -maxdepth 1 -type d)
-    files="$files"$'\n/Users/mczagany/dotfiles'
+    files="$files"$'\n'"/Users/$USER/dotfiles"
+    files="$files"$'\n'"/Users/$USER/linux"
     selected=$(echo "$files" | fzf)
 fi
 
