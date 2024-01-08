@@ -38,6 +38,9 @@ alt + shift - 9 : yabai -m window --space 9
 # Change split type of window
 alt - d : yabai -m window --toggle split
 
+# Toggle float for window
+alt + shift - f : yabai -m window --toggle float
+
 # Balance current space
 alt - b : yabai -m space --balance
 
