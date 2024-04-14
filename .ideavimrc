@@ -3,10 +3,13 @@
 " source ~/.vimrc
 
 Plug 'preservim/nerdtree'
+Plug 'machakann/vim-highlightedyank'
 
 set sneak
 set quickscope
 set NERDTree
+
+set clipboard=unnamedplus
 
 let mapleader = " "
 
@@ -17,7 +20,17 @@ nnoremap <C-u> <C-u>zz
 xnoremap <leader>p "_dP
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""
-" IDEA specific
+" Common settings
+set scrolloff=5
+set incsearch
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""
+" IDEA specific settings
+set ideajoin  " Language-specific line join
+
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""
+" IDEA specific bindings
 nmap <leader>? :action GotoAction<CR>
 
 " change font size
