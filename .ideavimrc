@@ -13,8 +13,13 @@ set clipboard=unnamedplus
 
 let mapleader = " "
 
-nnoremap <C-d> <C-d>zz
-nnoremap <C-u> <C-u>zz
+" When jumping lines, add them to the jumplist
+nnoremap <expr> j (v:count <= 1 ? 'j' : "m'" . v:count . 'j')
+nnoremap <expr> k (v:count <= 1 ? 'k' : "m'" . v:count . 'k')
+xnoremap <expr> j (v:count <= 1 ? 'j' : "m'" . v:count . 'j')
+xnoremap <expr> k (v:count <= 1 ? 'k' : "m'" . v:count . 'k')
+nnoremap <C-d> m'<C-d>zz
+nnoremap <C-u> m'<C-u>zz
 
 " Don't override register on paste
 xnoremap <leader>p "_dP
@@ -41,8 +46,8 @@ nmap <leader>= :action EditorResetFontSize<CR>
 " code navigation
 
 " https://youtrack.jetbrains.com/issue/VIM-44
-nnoremap <c-o> :action Back<cr>
-nnoremap <c-i> :action Forward<cr>
+" nnoremap <c-o> :action Back<cr>
+" nnoremap <c-i> :action Forward<cr>
 
 " nmap <leader>e :action GotoFile<CR>
 nmap <leader>a :action FindInPath<CR>
