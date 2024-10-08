@@ -1,27 +1,6 @@
-local lsp = require('lsp-zero').preset({})
-local mason_lspconfig = require('mason-lspconfig')
+local lsp = require('lsp-zero')
 
-require("neodev").setup()
-
-local servers = {
-    rust_analyzer = {},
-    gopls = {},
-    pyright = {},
-    lua_ls = {
-        Lua = {
-            workspace = { checkThirdParty = false },
-            telemetry = { enable = false },
-        },
-    },
-    cmake = {},
-    clangd = {}
-}
-
-mason_lspconfig.setup {
-    ensure_installed = vim.tbl_keys(servers),
-}
-
-lsp.on_attach(function(client, bufnr)
+local lsp_attach = function(client, bufnr)
     local opts = { buffer = bufnr }
 
     vim.keymap.set('n', 'K', '<cmd>lua vim.lsp.buf.hover()<cr>', opts)
@@ -38,26 +17,53 @@ lsp.on_attach(function(client, bufnr)
     vim.keymap.set('n', 'gl', '<cmd>lua vim.diagnostic.open_float()<cr>', opts)
     vim.keymap.set('n', '<leader>lk', '<cmd>lua vim.diagnostic.goto_prev()<cr>', opts)
     vim.keymap.set('n', '<leader>lj', '<cmd>lua vim.diagnostic.goto_next()<cr>', opts)
-end)
+end
 
--- (Optional) Configure lua language server for neovim
-require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls())
 
--- Setup clangd
-require('lspconfig').clangd.setup({
-    cmd={'/usr/bin/clangd'},
+lsp.extend_lspconfig({
+    capabilities = require('cmp_nvim_lsp').default_capabilities(),
+    lsp_attach = lsp_attach,
+    float_border = 'rounded',
+    sign_text = true,
 })
 
--- GROUPS:
-local disable_node_modules_eslint_group =
-	vim.api.nvim_create_augroup("DisableNodeModulesEslint", { clear = true })
+require('mason').setup({})
+require('mason-lspconfig').setup {
+    ensure_installed = vim.tbl_keys({
+        rust_analyzer = {},
+        gopls = {},
+        pyright = {},
+        lua_ls = {
+            Lua = {
+                workspace = { checkThirdParty = false },
+                telemetry = { enable = false },
+            },
+        },
+        jdtls = {}
+    }),
+    handlers = {
+        -- this first function is the "default handler"
+        -- it applies to every language server without a "custom handler"
+        function(server_name)
+            require('lspconfig')[server_name].setup({})
+        end,
 
-vim.api.nvim_create_autocmd({ "BufNewFile", "BufRead" }, {
-	pattern = { "*garrysmod/*", "*garrysMod*" },
-	callback = function()
-		vim.diagnostic.disable(0)
-	end,
-	group = disable_node_modules_eslint_group,
+        -- this is the "custom handler" for `lua_ls`
+        lua_ls = function()
+            require('lspconfig').lua_ls.setup({
+                on_init = function(client)
+                    lsp.nvim_lua_settings(client, {})
+                end,
+            })
+        end,
+
+        jdtls = lsp.noop
+    },
+}
+
+vim.api.nvim_create_autocmd({ "BufWritePost" }, {
+    pattern = { "*.java" },
+    callback = function()
+        local _, _ = pcall(vim.lsp.codelens.refresh)
+    end,
 })
-
-lsp.setup()
