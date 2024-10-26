@@ -73,7 +73,7 @@ alt - f : yabai -m window --toggle zoom-fullscreen
 # open terminal
 # alt - return : open -n /Applications/Alacritty.app
 
-alt - 1 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app | contains("Firefox")) and (."has-focus" | not))' | jq '.id' | head -n 1)
+alt - 1 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select(((.app | contains("Firefox")) or (.app | contains("Brave Browser"))) and (."has-focus" | not))' | jq '.id' | head -n 1)
 alt - 2 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app | contains("Alacritty")) and (."has-focus" | not))' | jq '.id' | head -n 1)
 alt - 3 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app == "IntelliJ IDEA") and (."has-focus" | not))' | jq '.id' | head -n 1)
 alt - 4 : yabai -m window --focus $(yabai -m query --windows | jq -c '.[] | select((.app == "PyCharm") and (."has-focus" | not))' | jq '.id' | head -n 1)
