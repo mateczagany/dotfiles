@@ -1,4 +1,4 @@
-import = ["/Users/czmate10/.config/alacritty/rose-pine.toml"]
+import = ["~/.config/alacritty/rose-pine.toml"]
 live_config_reload = true
 
 [env]
