@@ -12,6 +12,11 @@ return {
                             "unresolved-macro-call",
                             "unresolved-proc-macro"
                         },
+                    },
+                    checkOnSave = {
+                        allFeatures = true,
+                        command = "clippy",
+                        extraArgs = { "--no-deps" }
                     }
                 }
             },
