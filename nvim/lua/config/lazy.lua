@@ -26,6 +26,7 @@ require("lazy").setup({
         },
         -- import/override with your plugins
         { import = "lazyvim.plugins.extras.lang.rust" },
+        { import = "lazyvim.plugins.extras.lang.helm" },
         {
             import = "lazyvim.plugins.extras.test.core",
             opts = {
