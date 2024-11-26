@@ -35,3 +35,6 @@ vim.opt.clipboard = "unnamedplus"
 
 -- Don't autoformat on save
 vim.g.autoformat = false
+
+-- Use fzf-lua instead of Telescope
+vim.g.lazyvim_picker = "fzf"
