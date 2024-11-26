@@ -35,6 +35,9 @@ vim.keymap.set("n", "<leader>bn", ":bnext<cr>")
 -- Git
 vim.keymap.set("n", "<leader>gs", vim.cmd.Git)
 
+-- Disable LazyVim binding
+vim.keymap.del("n", "<leader>l")
+
 -- FZF
 local fzf = require("fzf-lua")
 fzf.setup({})
@@ -53,3 +56,6 @@ vim.keymap.set('n', 'gr', fzf.lsp_references, {})
 vim.keymap.set('n', 'gi', fzf.lsp_implementations, {})
 vim.keymap.set('n', '<leader>la', fzf.lsp_code_actions, {})
 vim.keymap.set('n', '<leader>ls', fzf.lsp_live_workspace_symbols, {})
+
+local zen = require("zen-mode")
+vim.keymap.set('n', '<leader>z', zen.toggle, {})

@@ -24,9 +24,14 @@ require("lazy").setup({
                 colorscheme = "catppuccin",
             },
         },
+        -- Disable snacks dashboard
+        { "folke/snacks.nvim", opts = { dashboard = { enabled = false } } },
         -- import/override with your plugins
         { import = "lazyvim.plugins.extras.lang.rust" },
         { import = "lazyvim.plugins.extras.lang.helm" },
+        { import = "lazyvim.plugins.extras.lang.java" },
+        { import = "lazyvim.plugins.extras.dap.core" },
+        { import = "lazyvim.plugins.extras.editor.harpoon2" },
         {
             import = "lazyvim.plugins.extras.test.core",
             opts = {
