@@ -40,7 +40,7 @@ vim.keymap.del("n", "<leader>l")
 
 -- FZF
 local fzf = require("fzf-lua")
-fzf.setup({})
+fzf.setup({ winopts = { preview = { layout = "vertical" } } })
 -- Find
 vim.keymap.set('n', '<leader>ff', fzf.files, {})
 vim.keymap.set('n', '<leader>fb', fzf.buffers, {})
