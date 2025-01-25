@@ -1,5 +1,5 @@
-import = ["~/.config/alacritty/rose-pine.toml"]
-live_config_reload = true
+general.import = ["~/.config/alacritty/rose-pine.toml"]
+general.live_config_reload = true
 
 [env]
 TERM = "xterm-256color"
