@@ -37,4 +37,4 @@ vim.opt.clipboard = "unnamedplus"
 vim.g.autoformat = false
 
 -- Use fzf-lua instead of Telescope
-vim.g.lazyvim_picker = "fzf"
+vim.g.lazyvim_picker = "snacks"

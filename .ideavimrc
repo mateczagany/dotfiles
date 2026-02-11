@@ -13,6 +13,9 @@ set clipboard=unnamedplus
 
 let mapleader = " "
 
+" quick escape
+inoremap jk <Esc>
+
 " When jumping lines, add them to the jumplist
 nnoremap <expr> j (v:count <= 1 ? 'j' : "m'" . v:count . 'j')
 nnoremap <expr> k (v:count <= 1 ? 'k' : "m'" . v:count . 'k')

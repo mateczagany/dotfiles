@@ -25,7 +25,7 @@ require("lazy").setup({
             },
         },
         -- Disable snacks dashboard
-        { "folke/snacks.nvim", opts = { dashboard = { enabled = false } } },
+        { "folke/snacks.nvim",                              opts = { dashboard = { enabled = false } } },
         -- import/override with your plugins
         { import = "lazyvim.plugins.extras.lang.rust" },
         { import = "lazyvim.plugins.extras.lang.helm" },
