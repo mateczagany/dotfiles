@@ -1,62 +1,63 @@
--- Keymaps are automatically loaded on the VeryLazy event
--- Default keymaps that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/keymaps.lua
--- Add any additional keymaps here
-
-vim.keymap.set("n", "<leader>pv", ":Ex<cr>")
-
--- Move lines in visual mode, auto-indent
-vim.keymap.set("v", "J", ":m '>+1<cr>gv=gv")
-vim.keymap.set("v", "K", ":m '<-2<cr>gv=gv")
-
--- Keep sreen centered
-vim.keymap.set("n", "<C-d>", "<C-d>zz")
-vim.keymap.set("n", "<C-u>", "<C-u>zz")
-vim.keymap.set("n", "n", "nzzzv")
-vim.keymap.set("n", "N", "Nzzzv")
-
--- Use this to not replace register when pasting in visual mode
-vim.keymap.set("x", "<leader>p", '"_dP')
-
--- Same with delete
-vim.keymap.set("n", "<leader>d", '"_d')
-vim.keymap.set("v", "<leader>d", '"_d')
-
--- Use this to yank into OS clipboard
-vim.keymap.set("n", "<leader>y", '"+y')
-vim.keymap.set("v", "<leader>y", '"+y')
-vim.keymap.set("n", "<leader>Y", '"+Y')
-
-vim.keymap.set("n", "Q", "<nop>")
-
--- Buffer movements
-vim.keymap.set("n", "<leader>bb", ":bprevious<cr>")
-vim.keymap.set("n", "<leader>bn", ":bnext<cr>")
-
--- Git
-vim.keymap.set("n", "<leader>gs", vim.cmd.Git)
-
--- Disable LazyVim binding
-vim.keymap.del("n", "<leader>l")
-
--- FZF
--- local fzf = require("fzf-lua")
--- fzf.setup({ winopts = { preview = { layout = "vertical" } } })
-
+local map = vim.keymap.set
 local snacks = require("snacks")
--- Find
-vim.keymap.set('n', '<leader>ff', snacks.picker.files, {})
-vim.keymap.set('n', '<leader>fb', snacks.picker.buffers, {})
-vim.keymap.set('n', '<leader>fh', LazyVim.pick("oldfiles"), {})
-vim.keymap.set('n', '<leader>fq', snacks.picker.qflist, {})
-vim.keymap.set('n', '<leader>a',  LazyVim.pick("grep"), {})
-vim.keymap.set('n', '<leader>?', snacks.picker.commands, {})
-vim.keymap.set('n', '<leader>fg', snacks.picker.git_files, {})
--- vim.keymap.set('n', '<leader>fc', snacks.picker.git_commits, {})
--- LSP
-vim.keymap.set('n', 'gr', snacks.picker.lsp_references, {})
-vim.keymap.set('n', 'gi', snacks.picker.lsp_implementations, {})
-vim.keymap.set('n', '<leader>la', snacks.picker.picker_actions, {})
-vim.keymap.set('n', '<leader>ls', snacks.picker.lsp_workspace_symbols, {})
 
-local zen = require("zen-mode")
-vim.keymap.set('n', '<leader>z', zen.toggle, {})
+map("n", "<leader>pv", "<cmd>Ex<cr>", { desc = "Explore files" })
+
+map("v", "J", ":m '>+1<cr>gv=gv", { desc = "Move selection down" })
+map("v", "K", ":m '<-2<cr>gv=gv", { desc = "Move selection up" })
+
+map("n", "<C-d>", "<C-d>zz", { desc = "Half-page down" })
+map("n", "<C-u>", "<C-u>zz", { desc = "Half-page up" })
+map("n", "n", "nzzzv", { desc = "Next search result" })
+map("n", "N", "Nzzzv", { desc = "Prev search result" })
+
+map("x", "<leader>p", '"_dP', { desc = "Paste without yanking" })
+
+map("n", "<leader>d", '"_d', { desc = "Delete without yanking" })
+map("v", "<leader>d", '"_d', { desc = "Delete without yanking" })
+
+map("n", "<leader>y", '"+y', { desc = "Yank to system clipboard" })
+map("v", "<leader>y", '"+y', { desc = "Yank to system clipboard" })
+map("n", "<leader>Y", '"+Y', { desc = "Yank line to system clipboard" })
+
+map("n", "Q", "<nop>")
+
+map("n", "<leader>bb", "<cmd>bprevious<cr>", { desc = "Previous buffer" })
+map("n", "<leader>bn", "<cmd>bnext<cr>", { desc = "Next buffer" })
+
+map("n", "<C-h>", "<cmd><C-U>TmuxNavigateLeft<cr>", { desc = "Tmux left" })
+map("n", "<C-j>", "<cmd><C-U>TmuxNavigateDown<cr>", { desc = "Tmux down" })
+map("n", "<C-k>", "<cmd><C-U>TmuxNavigateUp<cr>", { desc = "Tmux up" })
+map("n", "<C-l>", "<cmd><C-U>TmuxNavigateRight<cr>", { desc = "Tmux right" })
+map("n", "<C-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>", { desc = "Tmux previous" })
+
+map("n", "<leader>ff", function()
+  snacks.picker.files()
+end, { desc = "Find files" })
+map("n", "<leader>fb", function()
+  snacks.picker.buffers()
+end, { desc = "Find buffers" })
+map("n", "<leader>fh", function()
+  snacks.picker.recent()
+end, { desc = "Find recent files" })
+map("n", "<leader>fq", function()
+  snacks.picker.qflist()
+end, { desc = "Quickfix list" })
+map("n", "<leader>a", function()
+  snacks.picker.grep()
+end, { desc = "Grep" })
+map("n", "<leader>?", function()
+  snacks.picker.commands()
+end, { desc = "Commands" })
+map("n", "<leader>fg", function()
+  snacks.picker.git_files()
+end, { desc = "Find git files" })
+map("n", "gr", function()
+  snacks.picker.lsp_references()
+end, { desc = "References" })
+map("n", "gi", function()
+  snacks.picker.lsp_implementations()
+end, { desc = "Implementations" })
+map("n", "<leader>ls", function()
+  snacks.picker.lsp_workspace_symbols()
+end, { desc = "Workspace symbols" })
