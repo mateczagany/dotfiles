@@ -15,10 +15,10 @@ exec-on-workspace-change = ['/bin/bash', '-c',
 [gaps]
 inner.horizontal = 10
 inner.vertical = 10
-outer.left = 20
-outer.bottom = 20
-outer.top = [{ monitor."Odyssey G80SD" = 60 }, 14]
-outer.right = 20
+outer.left = 10
+outer.bottom = 10
+outer.top = [{ monitor."Odyssey G80SD" = 50 }, 14]
+outer.right = 10
 
 [mode.main.binding]
 

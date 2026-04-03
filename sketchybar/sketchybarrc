@@ -1,141 +1,175 @@
-# This is a demo config to showcase some of the most important commands.
-# It is meant to be changed and configured, as it is intentionally kept sparse.
-# For a (much) more advanced configuration example see my dotfiles:
-# https://github.com/FelixKratz/dotfiles
+#!/usr/bin/env bash
 
 PLUGIN_DIR="$CONFIG_DIR/plugins"
-SPACE_APP_FONT="sketchybar-app-font:Regular:14.0"
+FONT_FAMILY="JetBrainsMono Nerd Font"
+SPACE_APP_FONT="sketchybar-app-font:Regular:21.0"
 
-##### Bar Appearance #####
-# Configuring the general appearance of the bar.
-# These are only some of the options available. For all options see:
-# https://felixkratz.github.io/SketchyBar/config/bar
-# If you are looking for other colors, see the color picker:
-# https://felixkratz.github.io/SketchyBar/config/tricks#color-picker
+export ACCENT_COLOR=0xff7dcfff
+export ACTIVE_TEXT_COLOR=0xff1f2335
+export ICON_COLOR=0xffc0caf5
+export LABEL_COLOR=0xb3c0caf5
+export DIM_COLOR=0x66c0caf5
+export BRACKET_COLOR=0xcc272c40
+export POPUP_COLOR=0xe61f2335
 
-sketchybar --bar position=top height=40 blur_radius=30 color=0x40000000
-
-##### Changing Defaults #####
-# We now change some default values, which are applied to all further items.
-# For a full list of all available item properties see:
-# https://felixkratz.github.io/SketchyBar/config/items
+bar=(
+  position=top
+  height=48
+  blur_radius=48
+  color=0x00000000
+  padding_left=6
+  padding_right=6
+  sticky=on
+  topmost=off
+)
 
 default=(
-  padding_left=5
-  padding_right=5
-  icon.font="Hack Nerd Font:Bold:17.0"
-  label.font="Hack Nerd Font:Bold:14.0"
-  icon.color=0xffffffff
-  label.color=0xffffffff
-  icon.padding_left=4
-  icon.padding_right=4
-  label.padding_left=4
-  label.padding_right=4
+  padding_left=9
+  padding_right=9
+  icon.font="$FONT_FAMILY:Regular:16.5"
+  label.font="$FONT_FAMILY:Regular:16.5"
+  icon.color="$ICON_COLOR"
+  label.color="$LABEL_COLOR"
+  icon.highlight_color="$ACCENT_COLOR"
+  label.highlight_color="$ACCENT_COLOR"
+  icon.padding_left=0
+  icon.padding_right=0
+  label.padding_left=0
+  label.padding_right=0
+  background.corner_radius=8
+  background.height=33
+  background.drawing=off
+  scroll_texts=on
 )
-sketchybar --default "${default[@]}"
 
-##### Adding Mission Control Space Indicators #####
-# Let's add some mission control spaces:
-# https://felixkratz.github.io/SketchyBar/config/components#space----associate-mission-control-spaces-with-an-item
-# to indicate active and available mission control spaces.
+popup=(
+  popup.align=right
+  popup.blur_radius=48
+  popup.background.color="$POPUP_COLOR"
+  popup.background.corner_radius=12
+  popup.background.border_color=0x00000000
+  popup.background.border_width=0
+)
 
-# SPACE_ICONS=("1" "2" "3" "4" "5" "6" "7" "8" "9" "10")
-# for i in "${!SPACE_ICONS[@]}"
-# do
-#   sid="$(($i+1))"
-#   space=(
-#     space="$sid"
-#     icon="${SPACE_ICONS[i]}"
-#     icon.padding_left=7
-#     icon.padding_right=7
-#     background.color=0x40ffffff
-#     background.corner_radius=5
-#     background.height=25
-#     label.drawing=off
-#     script="$PLUGIN_DIR/space.sh"
-#     click_script="yabai -m space --focus $sid"
-#   )
-#   sketchybar --add space space."$sid" left --set space."$sid" "${space[@]}"
-# done
+bracket=(
+  background.color="$BRACKET_COLOR"
+  background.corner_radius=9
+  background.height=42
+)
 
-##### Adding Left Items #####
-# We add some regular items to the left side of the bar, where
-# only the properties deviating from the current defaults need to be set
+space_defaults=(
+  background.color="$ACCENT_COLOR"
+  background.corner_radius=6
+  background.height=27
+  icon.font="$FONT_FAMILY:Bold:18.0"
+  icon.padding_left=12
+  icon.padding_right=12
+  label.font="$SPACE_APP_FONT"
+  label.padding_left=0
+  label.padding_right=12
+  padding_left=0
+  padding_right=0
+)
 
-# sketchybar --add item chevron left \
-#            --set chevron icon= label.drawing=off \
-#            --add item front_app left \
-#            --set front_app icon.drawing=off script="$PLUGIN_DIR/front_app.sh" \
-#            --subscribe front_app front_app_switched
+sketchybar --bar "${bar[@]}" --default "${default[@]}"
 
-##### Adding Right Items #####
-# In the same way as the left items we can add items to the right side.
-# Additional position (e.g. center) are available, see:
-# https://felixkratz.github.io/SketchyBar/config/items#adding-items-to-sketchybar
-
-# Some items refresh on a fixed cycle, e.g. the clock runs its script once
-# every 10s. Other items respond to events they subscribe to, e.g. the
-# volume.sh script is only executed once an actual change in system audio
-# volume is registered. More info about the event system can be found here:
-# https://felixkratz.github.io/SketchyBar/config/events
-
-sketchybar --add item clock right \
-           --set clock update_freq=10 icon=  script="$PLUGIN_DIR/clock.sh" \
+sketchybar --add item date right \
+           --set date \
+                 icon.drawing=off \
+                 padding_left=0 \
+                 padding_right=0 \
+                 label.font="$FONT_FAMILY:Semibold:13.5" \
+                 label.padding_left=0 \
+                 label.padding_right=4 \
+                 y_offset=0 \
+                 update_freq=60 \
+                 script="$PLUGIN_DIR/date.sh" \
+                 click_script="open -a Calendar.app" \
+           --add item clock right \
+           --set clock \
+                 icon.drawing=off \
+                 padding_left=0 \
+                 padding_right=0 \
+                 label.font="$FONT_FAMILY:Bold:13.5" \
+                 label.padding_left=6 \
+                 label.padding_right=6 \
+                 y_offset=0 \
+                 update_freq=10 \
+                 script="$PLUGIN_DIR/clock.sh" \
+                 click_script="open -a Calendar.app" \
            --add item wifi right \
-           --set wifi update_freq=60 \
-                      icon=󰤨 \
-                      script="$PLUGIN_DIR/wifi.sh" \
-                      click_script="$PLUGIN_DIR/wifi.sh toggle" \
-                      label.max_chars=24 \
-                      scroll_texts=on \
-                      popup.align=right \
-                      popup.height=30 \
-                      popup.blur_radius=20 \
-                      popup.background.color=0xd92c2e34 \
-                      popup.background.corner_radius=10 \
-                      popup.background.border_color=0x44ffffff \
-                      popup.background.border_width=1 \
+           --set wifi \
+                  "${popup[@]}" \
+                  update_freq=60 \
+                  icon=󰤨 \
+                  icon.font="$FONT_FAMILY:Regular:21.0" \
+                  padding_left=3 \
+                  padding_right=3 \
+                  icon.padding_left=2 \
+                  icon.padding_right=2 \
+                  label.drawing=off \
+                  script="$PLUGIN_DIR/wifi.sh" \
+                  click_script="$PLUGIN_DIR/wifi.sh toggle" \
+                  label.max_chars=24 \
            --subscribe wifi system_woke mouse.exited.global front_app_switched space_change display_change \
            --add item bluetooth right \
-           --set bluetooth update_freq=10 \
-                           icon=󰂯 \
-                           script="$PLUGIN_DIR/bluetooth.sh" \
-                           click_script="$PLUGIN_DIR/bluetooth.sh toggle" \
-                           label.max_chars=40 \
-                           scroll_texts=on \
-                           popup.align=right \
-                           popup.height=30 \
-                           popup.blur_radius=20 \
-                           popup.background.color=0xd92c2e34 \
-                           popup.background.corner_radius=10 \
-                           popup.background.border_color=0x44ffffff \
-                           popup.background.border_width=1 \
+           --set bluetooth \
+                  "${popup[@]}" \
+                  update_freq=10 \
+                  icon=󰂯 \
+                  icon.font="$FONT_FAMILY:Regular:21.0" \
+                  padding_left=3 \
+                  padding_right=3 \
+                  icon.padding_left=2 \
+                  icon.padding_right=2 \
+                  label.drawing=off \
+                  script="$PLUGIN_DIR/bluetooth.sh" \
+                  click_script="$PLUGIN_DIR/bluetooth.sh toggle" \
+                  label.max_chars=40 \
            --subscribe bluetooth system_woke mouse.exited.global front_app_switched space_change display_change \
            --add item volume right \
-           --set volume script="$PLUGIN_DIR/volume.sh" \
+           --set volume \
+                  icon.font="$FONT_FAMILY:Regular:21.0" \
+                  label.font="$FONT_FAMILY:Semibold:13.5" \
+                  padding_left=3 \
+                  padding_right=3 \
+                  icon.padding_left=2 \
+                  icon.padding_right=2 \
+                  label.drawing=on \
+                  script="$PLUGIN_DIR/volume.sh" \
            --subscribe volume volume_change \
            --add item battery right \
-           --set battery update_freq=120 script="$PLUGIN_DIR/battery.sh" \
+           --set battery \
+                  icon.font="$FONT_FAMILY:Regular:21.0" \
+                  label.font="$FONT_FAMILY:Semibold:13.5" \
+                  padding_left=3 \
+                  padding_right=3 \
+                  icon.padding_left=2 \
+                  icon.padding_right=2 \
+                  label.drawing=on \
+                  update_freq=120 \
+                  script="$PLUGIN_DIR/battery.sh" \
            --subscribe battery system_woke power_source_change
 
-# Aerospace
 sketchybar --add event aerospace_workspace_change
 
 for sid in $(aerospace list-workspaces --all); do
-    sketchybar --add item space.$sid left \
-        --subscribe space.$sid aerospace_workspace_change front_app_switched \
-        --set space.$sid \
-        background.color=0x44ffffff \
-        background.corner_radius=5 \
-        background.height=20 \
-        background.drawing=off \
-        update_freq=10 \
-        icon="$sid" \
-        label.drawing=off \
-        label.font="$SPACE_APP_FONT" \
-        click_script="aerospace workspace $sid" \
-        script="$PLUGIN_DIR/aerospace.sh $sid"
+  sketchybar --add item space.$sid left \
+             --subscribe space.$sid aerospace_workspace_change front_app_switched \
+             --set space.$sid \
+                   "${space_defaults[@]}" \
+                   update_freq=10 \
+                   icon="$sid" \
+                   label.drawing=off \
+                   click_script="aerospace workspace $sid" \
+                   script="$PLUGIN_DIR/aerospace.sh $sid"
 done
 
-##### Force all scripts to run the first time (never do this in a script) #####
+sketchybar --add bracket spaces_cluster '/space\..*/' \
+           --set spaces_cluster "${bracket[@]}" \
+           --add bracket status_cluster date clock wifi bluetooth volume battery \
+           --set status_cluster "${bracket[@]}" \
+                padding_left=6 \
+                padding_right=6
+
 sketchybar --update

@@ -1,20 +1,32 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-# The volume_change event supplies a $INFO variable in which the current volume
-# percentage is passed to the script.
+current_volume() {
+  osascript -e 'output volume of (get volume settings)' 2>/dev/null
+}
 
-if [ "$SENDER" = "volume_change" ]; then
-  VOLUME="$INFO"
+render_volume() {
+  local volume="$1"
 
-  case "$VOLUME" in
-    [6-9][0-9]|100) ICON="󰕾"
+  case "$volume" in
+    [7-9][0-9]|100) ICON="󰕾"
     ;;
-    [3-5][0-9]) ICON="󰖀"
+    [4-6][0-9]) ICON="󰖀"
     ;;
-    [1-9]|[1-2][0-9]) ICON="󰕿"
+    [1-3][0-9]) ICON="󰕿"
     ;;
     *) ICON="󰖁"
   esac
 
-  sketchybar --set "$NAME" icon="$ICON" label="$VOLUME%"
-fi
+  sketchybar --set "$NAME" icon="$ICON" label="$volume%"
+}
+
+case "${SENDER:-}" in
+  volume_change)
+    render_volume "$INFO"
+    ;;
+  *)
+    VOLUME="${INFO:-$(current_volume)}"
+    [ -z "$VOLUME" ] && exit 0
+    render_volume "$VOLUME"
+    ;;
+esac

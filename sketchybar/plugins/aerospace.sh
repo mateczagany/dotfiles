@@ -24,22 +24,29 @@ $workspace_apps
 EOF
 fi
 
+background_drawing=off
+icon_color="${DIM_COLOR:-0x66c0caf5}"
+label_color="${DIM_COLOR:-0x66c0caf5}"
+label_drawing=off
+
 if [ "$workspace" = "$focused_workspace" ]; then
     background_drawing=on
-else
-    background_drawing=off
+    icon_color="${ACTIVE_TEXT_COLOR:-0xff1f2335}"
+    label_color="${ACTIVE_TEXT_COLOR:-0xff1f2335}"
+
+    if [ -n "$workspace_icons" ]; then
+        label_drawing=on
+    fi
+elif [ -n "$workspace_icons" ]; then
+    icon_color="${ICON_COLOR:-0xffc0caf5}"
+    label_color="${ICON_COLOR:-0xffc0caf5}"
+    label_drawing=on
 fi
 
-if [ -n "$workspace_icons" ]; then
-    sketchybar --set "$NAME" \
-        background.drawing="$background_drawing" \
-        icon="$workspace" \
-        label="$workspace_icons" \
-        label.drawing=on
-else
-    sketchybar --set "$NAME" \
-        background.drawing="$background_drawing" \
-        icon="$workspace" \
-        label="" \
-        label.drawing=off
-fi
+sketchybar --set "$NAME" \
+    background.drawing="$background_drawing" \
+    icon="$workspace" \
+    icon.color="$icon_color" \
+    label="$workspace_icons" \
+    label.color="$label_color" \
+    label.drawing="$label_drawing"
