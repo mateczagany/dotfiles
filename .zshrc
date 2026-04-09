@@ -29,6 +29,9 @@ export EDITOR=nvim
 alias vi=nvim
 alias vim=nvim
 
+# opencode
+export PATH=~/.opencode/bin:$PATH
+
 # Hadoop
 # export PATH="$PATH:/Users/czmate10/dev/hadoop-3.3.4/bin"
 # export HADOOP_CLASSPATH=`hadoop classpath`
