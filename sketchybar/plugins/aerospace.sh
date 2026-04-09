@@ -25,21 +25,21 @@ EOF
 fi
 
 background_drawing=off
-icon_color="${DIM_COLOR:-0x66c0caf5}"
-label_color="${DIM_COLOR:-0x66c0caf5}"
+icon_color="${DIM_COLOR:-0x668a8a8a}"
+label_color="${DIM_COLOR:-0x668a8a8a}"
 label_drawing=off
 
 if [ "$workspace" = "$focused_workspace" ]; then
     background_drawing=on
-    icon_color="${ACTIVE_TEXT_COLOR:-0xff1f2335}"
-    label_color="${ACTIVE_TEXT_COLOR:-0xff1f2335}"
+    icon_color="${ACTIVE_TEXT_COLOR:-0xfff0f0f0}"
+    label_color="${ACTIVE_TEXT_COLOR:-0xfff0f0f0}"
 
     if [ -n "$workspace_icons" ]; then
         label_drawing=on
     fi
 elif [ -n "$workspace_icons" ]; then
-    icon_color="${ICON_COLOR:-0xffc0caf5}"
-    label_color="${ICON_COLOR:-0xffc0caf5}"
+    icon_color="${ICON_COLOR:-0xffc6c6c6}"
+    label_color="${ICON_COLOR:-0xffc6c6c6}"
     label_drawing=on
 fi
 

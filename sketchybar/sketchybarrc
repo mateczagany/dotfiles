@@ -4,13 +4,13 @@ PLUGIN_DIR="$CONFIG_DIR/plugins"
 FONT_FAMILY="JetBrainsMono Nerd Font"
 SPACE_APP_FONT="sketchybar-app-font:Regular:21.0"
 
-export ACCENT_COLOR=0xff7dcfff
-export ACTIVE_TEXT_COLOR=0xff1f2335
-export ICON_COLOR=0xffc0caf5
-export LABEL_COLOR=0xb3c0caf5
-export DIM_COLOR=0x66c0caf5
-export BRACKET_COLOR=0xcc272c40
-export POPUP_COLOR=0xe61f2335
+export ACCENT_COLOR=0x885e5e5e
+export ACTIVE_TEXT_COLOR=0xfff0f0f0
+export ICON_COLOR=0xffc6c6c6
+export LABEL_COLOR=0xb3c6c6c6
+export DIM_COLOR=0x668a8a8a
+export BRACKET_COLOR=0x55303030
+export POPUP_COLOR=0xaa202020
 
 bar=(
   position=top
