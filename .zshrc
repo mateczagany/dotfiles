@@ -9,14 +9,17 @@ fi
 alias fix-keys="hidutil property --set '{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x7000000e7,\"HIDKeyboardModifierMappingDst\":0x7000000e6},{\"HIDKeyboardModifierMappingSrc\":0x7000000e6,\"HIDKeyboardModifierMappingDst\":0x7000000e7}]}'"
 export ZSH_HIGHLIGHT_DIRS_BLACKLIST=(/net)
 
+# Homebrew
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
+
 # DataSQRL
 export AWS_PROFILE=datasqrl-dev
 export AWS_REGION=us-east-1
 
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
-export JAVA_HOME=/Users/czmate10/Library/Java/JavaVirtualMachines/azul-17.0.5/Contents/Home
-export M2_HOME=/Users/czmate10/Library/Maven/apache-maven-3.8.6/
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+export M2_HOME="/opt/maven-3.8.6"
 export PATH="${M2_HOME}/bin:${PATH}"
 
 # Compilation stuff
@@ -28,6 +31,7 @@ export PATH="$PATH:/Users/czmate10/.local/bin"
 export EDITOR=nvim
 alias vi=nvim
 alias vim=nvim
+
 
 # opencode
 export PATH=~/.opencode/bin:$PATH
