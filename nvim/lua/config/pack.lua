@@ -42,6 +42,7 @@ vim.pack.add({
   "https://github.com/neovim/nvim-lspconfig",
   { src = "https://github.com/mrcjkb/rustaceanvim", version = vim.version.range("8.x") },
   "https://github.com/qvalentin/helm-ls.nvim",
+  "https://github.com/MeanderingProgrammer/render-markdown.nvim"
 }, { confirm = false })
 
 require("catppuccin").setup({
