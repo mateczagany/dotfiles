@@ -3,8 +3,8 @@
 if [[ $# -eq 1 ]]; then
     selected=$1
 else
-    files=$(find ~/dev/repos -mindepth 1 -maxdepth 1 -type d)
-    files="$files"$'\n'"/Users/$USER/dotfiles"
+    files=$(find ~/dev/repos ~/dev/datasqrl -mindepth 1 -maxdepth 1 -type d)
+    files="$files"$'\n'"/Users/$USER/dev/datasqrl"
     selected=$(echo "$files" | fzf)
 fi
 
