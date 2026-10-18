@@ -40,6 +40,7 @@ set ideajoin  " Language-specific line join
 """"""""""""""""""""""""""""""""""""""""""""""""""""
 " IDEA specific bindings
 nmap <leader>? :action GotoAction<CR>
+imap <C-n> <Action>(CodeCompletion)
 
 " change font size
 nmap + :action EditorIncreaseFontSize<CR>
@@ -58,10 +59,12 @@ nmap <leader>ff :action RecentFiles<CR>
 nmap gr :action ShowUsages<CR>
 nmap gi :action GotoImplementation<CR>
 nmap gd :action VimGotoDeclaration<CR>
-nmap gs :action GotoSuperMethod<CR>
+nmap gs :action ParameterInfo<CR>
+nmap K :action QuickJavaDoc<CR>
 map gc :action CommentByLineComment<CR>
 
 nmap <leader>lr :action RenameElement<CR>
+nmap <leader>ls :action GotoSymbol<CR>
 nmap <leader>lj :action GotoPreviousError<CR>
 nmap <leader>lk :action GotoNextError<CR>
 nmap <leader>lf :action ReformatCode<CR>

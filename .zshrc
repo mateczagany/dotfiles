@@ -32,6 +32,8 @@ export EDITOR=nvim
 alias vi=nvim
 alias vim=nvim
 
+# Difftastic
+export GIT_EXTERNAL_DIFF=difft git diff
 
 # opencode
 export PATH=~/.opencode/bin:$PATH

@@ -1,8 +1,10 @@
 local pack_group = vim.api.nvim_create_augroup("NvimNewPackHooks", { clear = true })
 local treesitter_languages = {
   "bash",
+  "css",
   "helm",
   "html",
+  "javascript",
   "json",
   "lua",
   "markdown",
@@ -12,6 +14,8 @@ local treesitter_languages = {
   "regex",
   "ron",
   "rust",
+  "tsx",
+  "typescript",
   "vim",
   "yaml",
 }
@@ -42,7 +46,8 @@ vim.pack.add({
   "https://github.com/neovim/nvim-lspconfig",
   { src = "https://github.com/mrcjkb/rustaceanvim", version = vim.version.range("8.x") },
   "https://github.com/qvalentin/helm-ls.nvim",
-  "https://github.com/MeanderingProgrammer/render-markdown.nvim"
+  "https://github.com/MeanderingProgrammer/render-markdown.nvim",
+  "https://github.com/stevearc/conform.nvim",
 }, { confirm = false })
 
 require("catppuccin").setup({
@@ -109,4 +114,16 @@ require("helm-ls").setup({
   conceal_templates = { enabled = false },
   indent_hints = { enabled = false },
   action_highlight = { enabled = false },
+})
+
+require("conform").setup({
+  formatters_by_ft = {
+    javascript = { "prettier" },
+    javascriptreact = { "prettier" },
+    typescript = { "prettier" },
+    typescriptreact = { "prettier" },
+    css = { "prettier" },
+    html = { "prettier" },
+    json = { "prettier" },
+  },
 })
