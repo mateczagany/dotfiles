@@ -93,10 +93,24 @@ start() {  # NAME
   [ -z "$id" ] || printf '%s\n' "$1" > "$STATE/machines/$id"
 }
 
+# This repo's Claude memory folder on the Mac. Claude names it after the main
+# checkout's path with every character but A-Z, a-z and 0-9 turned into "-". Past
+# 200 characters it adds a hash; for such a path this prints nothing, and that
+# repo's machine keeps its own memory.
+memory_dir() {  # ROOT
+  local key
+  key=$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')
+  if [ "${#key}" -le 200 ]; then printf '%s/.claude/projects/%s/memory\n' "$HOME" "$key"; fi
+}
+
 # Mounts every machine gets besides its repo, one HOST:GUEST:MODE per line.
 wanted() {  # ROOT
-  local root=$1 mode line
+  local root=$1 mode line mem
   printf '%s\n' "$CFG/shared:/opt/smv:ro" "$HOME/.claude/skills:/opt/claude-skills:ro"
+  # Claude's memory for this repo, shared with Claude on the Mac; setup.d/memory.sh
+  # links it into ~/.claude in the machine.
+  mem=$(memory_dir "$root")
+  [ -z "$mem" ] || printf '%s\n' "${mem}:${mem}:rw"
   for mode in ro rw; do                            # your folders, at the same path
     [ -f "$CFG/$mode-mounts" ] || continue
     while IFS= read -r line; do
@@ -168,9 +182,10 @@ create() {  # ROOT NAME
 }
 
 up() {  # DIR -> prints the machine name once it answers
-  local root name
+  local root name mem
   root=$(repo_root "$1"); name=$(machine_name "$root")
-  mkdir -p "$HOME/.claude/skills"                  # mount sources must exist
+  mem=$(memory_dir "$root")
+  mkdir -p "$HOME/.claude/skills" ${mem:+"$mem"}   # mount sources must exist
   proxy_up
   lock "$name"
   # in_vm calls this as $(up ...), where bash ignores set -e, so check each step.
@@ -199,10 +214,10 @@ up() {  # DIR -> prints the machine name once it answers
   die "$name did not answer; see: smolvm machine logs --name $name"
 }
 
-in_vm() {  # DIR USER CMD...
-  local dir user=$2 root name rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
+in_vm() {  # DIR USER LABEL CMD...
+  local dir user=$2 label=$3 root name rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
   local -a restore
-  dir=$(cd "$1" && pwd -P); shift 2
+  dir=$(cd "$1" && pwd -P); shift 3
   root=$(repo_root "$dir")
   case "$dir/" in
     "$root"/*) ;;
@@ -215,15 +230,15 @@ in_vm() {  # DIR USER CMD...
   fi
   set -- smolvm machine exec --name "$name" -it -u "$user" -w "$dir" "${env[@]}" -- "$@"
 
-  # With NAME_WINDOW=1 in tmux (smv sh, smv root), the window takes the machine's
-  # name until the shell exits, then gets its old name back.
-  if [ "${NAME_WINDOW:-}" != 1 ] || [ -z "${TMUX_PANE:-}" ]; then exec "$@"; fi
+  # In tmux, the window is named NAME-LABEL (cc-api-claude, cc-api-sh) until the
+  # command exits, then gets its old name back.
+  [ -n "${TMUX_PANE:-}" ] || exec "$@"
   if [ "$(tmux display -p -t "$TMUX_PANE" '#{automatic-rename}')" = 1 ]; then
     restore=(set-option -wu -t "$TMUX_PANE" automatic-rename)
   else
     restore=(rename-window -t "$TMUX_PANE" "$(tmux display -p -t "$TMUX_PANE" '#W')")
   fi
-  tmux rename-window -t "$TMUX_PANE" "$name"
+  tmux rename-window -t "$TMUX_PANE" "$name-$label"
   "$@" || rc=$?
   tmux "${restore[@]}" 2>/dev/null || true   # the window may be gone already
   exit "$rc"
@@ -244,9 +259,9 @@ cmd=${1:-help}; [ $# -gt 0 ] && shift
 case "$cmd" in
   claude)
     d=$PWD; if [ $# -gt 0 ] && [ -d "$1" ]; then d=$1; shift; fi
-    in_vm "$d" dev env HOME=/home/dev sh /opt/smv/claude-start "$@" ;;
-  sh)       NAME_WINDOW=1 in_vm "${1:-$PWD}" dev env HOME=/home/dev sh /opt/smv/shell-start ;;
-  root)     NAME_WINDOW=1 in_vm "${1:-$PWD}" root bash -l ;;
+    in_vm "$d" dev claude env HOME=/home/dev sh /opt/smv/claude-start "$@" ;;
+  sh)       in_vm "${1:-$PWD}" dev sh env HOME=/home/dev sh /opt/smv/shell-start ;;
+  root)     in_vm "${1:-$PWD}" root root bash -l ;;
   up)       up "${1:-$PWD}" >/dev/null ;;
   state)    n=$(machine_for "${1:-}"); state "$n" ;;
   stop)     n=$(machine_for "${1:-}"); lock "$n"; smolvm machine stop --name "$n"; unlock ;;

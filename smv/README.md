@@ -18,7 +18,7 @@ Repos and worktrees are mounted at the same path they have on the Mac, so every 
 bash ~/dev/repos/dotfiles/smv/install.sh
 ```
 
-This links this folder to `~/.config/smv` and each script in `bin/` into `~/.local/bin`. It is safe to run again and never replaces a real file.
+This links this folder to `~/.config/smv` and each script in `bin/` into `~/.local/bin`, and adds the memory guard hook (see [Claude memory](#claude-memory)) to `~/.claude/settings.json`. It prints a line for each thing it links, adds or skips. It is safe to run again, never replaces a real file, and copies `settings.json` to `settings.json.bak-smv-…` before changing it.
 
 Then, once per Mac:
 
@@ -45,7 +45,7 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 
 | Path | What it does |
 | --- | --- |
-| `install.sh` | Links this folder and `bin/` into place |
+| `install.sh` | Links this folder and `bin/` into place; adds the memory guard hook to `~/.claude/settings.json` |
 | `bin/smv` | Creates, starts and enters machines; adds missing mounts; starts the egress proxy |
 | `egress.py` | The egress proxy: a mitmproxy addon that is also smolvm's egress decider |
 | `Smolfile` | The machine definition: image, CPUs, memory, network, first-start setup |
@@ -84,7 +84,7 @@ smv proxy                 # restart the egress proxy
 
 `DIR` defaults to the current folder and can be any worktree. The first `smv` call in a repo creates its machine; the first start installs everything and takes a few minutes.
 
-The tmux bindings (in `~/.tmux.conf`, not here): `prefix C` Claude here, `prefix R` resume the last chat here, `prefix V` a machine shell. The fzf session switcher opens a `claude` window in every git repo's session. Inside tmux, `smv sh` and `smv root` rename their window to the machine's name until the shell exits, then put the old name back. `smv claude` leaves its window's name alone.
+The tmux bindings (in `~/.tmux.conf`, not here): `prefix C` Claude here, `prefix R` resume the last chat here, `prefix V` a machine shell. The fzf session switcher opens a `claude` window in every git repo's session. Inside tmux, `smv claude`, `smv sh` and `smv root` rename their window to the machine's name plus the command (`cc-api-claude`, `cc-api-sh`, `cc-api-root`) until Claude or the shell exits, then put the old name back.
 
 ## Worktrees
 
@@ -103,7 +103,7 @@ A worktree's `.git` file points back to the main repo by absolute path, and only
 - Temurin 21, Maven, Python 3.14 with `uv`, Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
 - Network: HTTP and HTTPS to the internet, through the egress proxy; LAN, VPN ranges and the Mac's own ports closed (`block_private`). Other TCP (SSH, databases on the internet) and UDP other than DNS are blocked.
 - `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold placeholders, not the tokens.
-- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, plus `ro-mounts` and `rw-mounts` at their Mac paths.
+- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus `ro-mounts` and `rw-mounts` at their Mac paths.
 - `smv sh` opens zsh with this repo's `.zshrc` and nvim with its `nvim/` config, both read from the `~/dev/repos/dotfiles` mount, so an edit on the Mac shows up at the next shell or nvim start. A machine's first start runs `shell-setup`, which installs oh-my-zsh with the theme and plugins the `.zshrc` loads, Neovim from GitHub (the config needs 0.12, Ubuntu has 0.11), and nvim's plugins and treesitter parsers. Every `smv sh` runs it again, so whatever failed at the first start gets installed then.
 - The prompt uses `.p10k.zsh` from this repo if there is one, and p10k's defaults otherwise. Either way it starts with the machine's name (`cc-<repo>`) in yellow, set in `shared/zshrc`, so a machine shell doesn't look like the Mac's.
 - There is no system clipboard. `pbcopy`, `pbpaste` and nvim's `+` register share `~/.cache/smv-clipboard`, so the vi-mode `y` and `p` in zsh and yanks in nvim work together inside one machine. Each copy is also sent as OSC 52, which reaches the Mac clipboard only if `~/.tmux.conf` has `set -g set-clipboard on`.
@@ -114,8 +114,20 @@ A worktree's `.git` file points back to the main repo by absolute path, and only
 2. sets the dark theme and the classic (non-fullscreen) UI unless you chose others, and turns off the bypass-mode confirmation
 3. links your Mac's skills into `~/.claude/skills`, keeping links a skill's own installer made
 4. imports `CLAUDE.global.md` and `CLAUDE.md` from `/opt/smv`
-5. runs every `setup.d/*.sh`; a failing one prints a line and Claude starts anyway. `home-links.sh` links each folder mounted from your Mac home at the same place under `/home/dev`, so `~/…` paths mean the same thing on both sides
+5. runs every `setup.d/*.sh`; a failing one prints a line and Claude starts anyway. `home-links.sh` links each folder mounted from your Mac home at the same place under `/home/dev`, so `~/…` paths mean the same thing on both sides, and `memory.sh` points Claude's memory folder at the Mac's
 6. starts Claude on Opus at `xhigh` effort; `/model` and `/effort` change one session only
+
+## Claude memory
+
+Claude keeps a repo's auto memory in `~/.claude/projects/<key>/memory`, where `<key>` is the main checkout's path with every character other than letters and digits turned into `-` (`-Users-you-dev-repos-api`). Worktrees use the main checkout's folder. `smv` creates that folder on the Mac and mounts it read-write into the repo's machine at the same path, and `setup.d/memory.sh` links the machine's `~/.claude/projects/<key>/memory` to it. Claude in the machine and Claude on the Mac read and write one set of memories, and they survive `smv rm`. Each session reads `MEMORY.md` when it starts, so what one session writes reaches the others at their next start.
+
+A machine sees only its own repo's memory folder: not the Mac's transcripts, and not other repos' memory.
+
+Machines made before this had their own memory folder. At the first Claude start after `smv` adds the mount, `memory.sh` moves those memories into the Mac's folder, appends the machine's `MEMORY.md` lines the Mac's lacks, and replaces the folder with the link. It never overwrites a Mac file: when both sides have a file with the same name, it names the file and leaves the machine's folder alone until you merge it.
+
+Claude adds a hash to keys over 200 characters, which `smv` doesn't compute, so a repo with a path that long keeps its memory in the machine.
+
+What a machine can do with the folder: write memories that Claude on the Mac reads at its next start in that repo, delete them, or plant a symlink. Claude follows symlinks, so a `MEMORY.md` linked to `~/.ssh/id_ed25519` would load the key into a Mac session. The memory guard, a `SessionStart` hook that `install.sh` adds to `~/.claude/settings.json` on the Mac, deletes symlinks and other non-regular files from every memory folder before Claude reads them, and shows a warning naming what it deleted. It runs only when a session starts, so a link planted during a Mac session can still reach a topic file that session reads later. Write access to the repo already gives a machine as much: a symlinked `CLAUDE.local.md` loads the same way, and `.git/config` and `.git/hooks` can run commands on the Mac at your next `git status` or commit there.
 
 ## Egress proxy
 
@@ -161,7 +173,8 @@ Keep `~/.local/state/smv` out of `ro-mounts` and `rw-mounts`: it holds the CA's 
 | `egress.py`, `~/.local/state/smv/personal` | Immediately: the proxy reloads both when they change |
 | `shared/docker-runc` | The next container started, in machines made since it was added |
 | A token in Keychain | `smv proxy` |
-| `Smolfile`, `repos/*.init` | New machines only. To rebuild one: `smv rm && smv up`, which loses its Claude history, caches and Docker images |
+| `Smolfile`, `repos/*.init` | New machines only. To rebuild one: `smv rm && smv up`, which loses its Claude history, caches and Docker images (its memory is on the Mac and stays) |
+| The memory guard in `install.sh` | Run `install.sh` again: it replaces the hook it added before |
 | CPUs or memory of one machine | `smv stop`, then `smolvm machine update --name cc-<repo> --cpus 8 --mem 16384` |
 
 Claude working in this repo's own machine (`cc-dotfiles`) edits the live files every machine runs, and changes apply before you commit. That includes `egress.py`, so it can turn off its own filter. Check `git diff` after such a session.
@@ -171,6 +184,7 @@ Claude working in this repo's own machine (`cc-dotfiles`) edits the live files e
 - The Claude and GitHub tokens stay on the Mac. Machines hold placeholders, and the egress proxy puts the tokens in on verified connections to Anthropic and GitHub, so the agent can use them there but can't read them. Keep the GitHub token read-only and limited to the repos it needs.
 - The machines have no SSH keys; you push from the Mac.
 - Credentials for private Maven or Gradle repositories, if needed, live inside the machine where the agent can read them.
+- Each machine can write its repo's Claude memory folder on the Mac, which Claude on the Mac reads. See [Claude memory](#claude-memory) for what the memory guard catches and what it doesn't.
 
 ## Troubleshooting
 
@@ -189,3 +203,6 @@ Claude working in this repo's own machine (`cc-dotfiles`) edits the live files e
 | `docker` can't connect | `sudo tail /var/log/dockerd.log` in the machine |
 | `smv sh` opens bash, not zsh | `shell-setup` failed; its error is printed above the prompt. Run `sh /opt/smv/shell-setup` in that bash to retry |
 | Writes to the repo fail with "Operation not permitted" | The uid in the Smolfile isn't `id -u` on the Mac |
+| `memory.sh: both this machine and the Mac have …` | Merge the files it names from the machine's folder into the Mac's, delete the machine's folder (both paths are in the message), then start Claude again |
+| A Mac Claude session warns "smv memory guard: deleted …" | A machine put a symlink or special file in that memory folder. The path names the repo; check what that repo's machine was doing |
+| `install.sh`: "skip … memory guard hook not added" | The reason is on the same line. Fix it and run `install.sh` again |
