@@ -49,7 +49,7 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 | `bin/smv` | Creates, starts and enters machines; adds missing mounts; starts the egress proxy |
 | `egress.py` | The egress proxy: a mitmproxy addon that is also smolvm's egress decider |
 | `Smolfile` | The machine definition: image, CPUs, memory, network, first-start setup |
-| `ro-mounts` | Mac folders every machine sees read-only, one per line (`~/…` works) |
+| `ro-mounts` | Mac folders machines see read-only, one per line (`~/…` works); a `[PATH]` line limits the next ones to repos inside PATH (see [Mount lists](#mount-lists)) |
 | `rw-mounts` | Same, read-write |
 | `ro-mounts.local`, `rw-mounts.local` | Same as the two above, but git-ignored: for paths you'd rather not commit |
 | `repos/cc-<repo>.init` | Extra first-start commands for one repo's machine, one per line, run as root |
@@ -98,13 +98,29 @@ git worktree move ../api-fix-billing .worktrees/fix-billing   # an existing sibl
 
 A worktree's `.git` file points back to the main repo by absolute path, and only the main checkout is mounted. Sibling worktrees (`~/dev/repos/api-fix-billing`) are outside the machine, and `smv` refuses them.
 
+## Mount lists
+
+`ro-mounts`, `rw-mounts` and their `.local` versions name Mac folders to mount at the same path, one per line. A `[PATH]` line limits the lines after it, up to the next `[…]` line, to machines whose repo is inside PATH, and `[*]` goes back to every machine. With this in `ro-mounts.local`, each machine for a repo in `~/dev/work` sees the other repos there and a library they use, read-only, and other machines see neither:
+
+```
+[~/dev/work]
+~/dev/work
+~/dev/repos/some-library
+```
+
+A folder that holds the repo, like `~/dev/work` for `~/dev/work/api`, is mounted around it, and the repo stays read-write inside. smolvm mounts parent folders first when a machine starts, but attaching one to a running machine would cover the repo, so `smv` adds such a folder only while the machine is stopped and otherwise prints that you need to `smv stop` first. `smv` skips a line that is the repo or inside it, a folder that doesn't exist, and a folder inside another one listed with the same mode.
+
+Keep other repos read-only. A machine that can write a repo's `.git/hooks` or `.git/config` can run commands on the Mac the next time you use git there.
+
+A mount alone doesn't make Claude look there. Claude reads a `CLAUDE.md` in every parent folder of the one it starts in, so a `~/dev/work/CLAUDE.md` that says what the mounted repos are, and how to read the version this repo depends on, reaches every machine for a repo in `~/dev/work` and Claude on the Mac.
+
 ## Inside a machine
 
 - User `dev` with your Mac's uid (501) and passwordless sudo. `/home/dev` lives on the machine's disk and survives stops; `/tmp` does not.
 - Temurin 21, Maven, Python 3.14 with `uv`, `sqlite3`, `duckdb` (the latest CLI from GitHub, for Parquet), Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
 - Network: HTTP and HTTPS to the internet, through the egress proxy; LAN, VPN ranges and the Mac's own ports closed (`block_private`). Other TCP (SSH, databases on the internet) and UDP other than DNS are blocked.
 - `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold placeholders, not the tokens.
-- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus the folders in `ro-mounts`, `rw-mounts` and their `.local` versions at their Mac paths.
+- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus the folders in `ro-mounts`, `rw-mounts` and their `.local` versions that apply to this repo, at their Mac paths.
 - A SQLite database in WAL mode won't open from a read-only mount the usual way: SQLite needs to create its `-shm` file next to it. `sqlite3 'file:PATH?immutable=1'` works, and `shared/CLAUDE.md` tells Claude so. It reads only the main file, so writes a Mac program still holds in the `-wal` file don't show up until that program checkpoints or closes the database.
 - `smv sh` opens zsh with this repo's `.zshrc` and nvim with its `nvim/` config, both read from the `~/dev/repos/dotfiles` mount, so an edit on the Mac shows up at the next shell or nvim start. A machine's first start runs `shell-setup`, which installs oh-my-zsh with the theme and plugins the `.zshrc` loads, Neovim from GitHub (the config needs 0.12, Ubuntu has 0.11), and nvim's plugins and treesitter parsers. Every `smv sh` runs it again, so whatever failed at the first start gets installed then.
 - The prompt uses `.p10k.zsh` from this repo if there is one, and p10k's defaults otherwise. Either way it starts with the machine's name (`cc-<repo>`) in yellow, set in `shared/zshrc`, so a machine shell doesn't look like the Mac's.
@@ -170,7 +186,7 @@ Keep `~/.local/state/smv` out of `ro-mounts` and `rw-mounts`: it holds the CA's 
 | --- | --- |
 | `shared/` (CLAUDE files, `claude-start`, `setup.d/`) | Next Claude start, in every machine |
 | `shared/` shell files, this repo's `.zshrc` and `nvim/` | Next `smv sh` (or nvim start), in every machine. To update Neovim in one: `rm -rf ~/.local/nvim` in it, then `smv sh` |
-| `ro-mounts`, `rw-mounts` and their `.local` versions | Next time `smv` opens a machine: attached right away if it's running, added for good at its next start from stopped |
+| `ro-mounts`, `rw-mounts` and their `.local` versions | Next time `smv` opens a machine: attached right away if it's running, added for good at its next start from stopped. A folder that holds the repo or another mount is added only from stopped: `smv stop`, then open it |
 | `bin/` | Immediately |
 | `egress.py`, `~/.local/state/smv/personal` | Immediately: the proxy reloads both when they change |
 | `shared/docker-runc` | The next container started, in machines made since it was added |

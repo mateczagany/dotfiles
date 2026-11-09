@@ -105,25 +105,50 @@ memory_dir() {  # ROOT
 
 # Mounts every machine gets besides its repo, one HOST:GUEST:MODE per line.
 wanted() {  # ROOT
-  local root=$1 mode list line mem
+  local root=$1 mode list line mem scope n=0 i j skip
+  local -a paths modes
   printf '%s\n' "$CFG/shared:/opt/smv:ro" "$HOME/.claude/skills:/opt/claude-skills:ro"
   # Claude's memory for this repo, shared with Claude on the Mac; setup.d/memory.sh
   # links it into ~/.claude in the machine.
   mem=$(memory_dir "$root")
   [ -z "$mem" ] || printf '%s\n' "${mem}:${mem}:rw"
   # Your folders, at the same path. The .local lists are git-ignored, for paths
-  # you'd rather not commit.
+  # you'd rather not commit. A [PATH] line limits the lines after it, up to the
+  # next [...] line, to repos inside PATH; [*] means every repo again.
   for mode in ro rw; do
     for list in "$CFG/$mode-mounts" "$CFG/$mode-mounts.local"; do
       [ -f "$list" ] || continue
+      scope=
       while IFS= read -r line; do
         line=${line/#\~/$HOME}
-        case "$line" in ''|'#'*) continue ;; esac
-        case "$root/" in "$line"/*) continue ;; esac   # the repo itself, or inside it
-        case "$line/" in "$root"/*) continue ;; esac   # already mounted with the repo
-        [ -d "$line" ] && printf '%s\n' "$line:$line:$mode"
+        case "$line" in
+          ''|'#'*) continue ;;
+          '[*]') scope=; continue ;;
+          '['*']') scope=${line#\[}; scope=${scope%\]}; scope=${scope/#\~/$HOME}; scope=${scope%/}; continue ;;
+        esac
+        if [ -n "$scope" ]; then
+          case "$root/" in "$scope"/*) ;; *) continue ;; esac
+        fi
+        line=${line%/}
+        case "$line/" in "$root"/*) continue ;; esac   # the repo itself, or inside it
+        # A folder that holds the repo stays: smolvm mounts it first, then the repo
+        # read-write inside it.
+        [ -d "$line" ] || continue
+        paths[n]=$line; modes[n]=$mode; n=$((n + 1))
       done < "$list"
     done
+  done
+  # Leave out a folder listed twice, or inside another one listed with the same mode.
+  for ((i = 0; i < n; i++)); do
+    skip=
+    for ((j = 0; j < n; j++)); do
+      [ "$j" != "$i" ] && [ "${modes[j]}" = "${modes[i]}" ] || continue
+      case "${paths[i]}/" in
+        "${paths[j]}/") [ "$j" -gt "$i" ] || skip=1 ;;
+        "${paths[j]}"/*) skip=1 ;;
+      esac
+    done
+    [ -n "$skip" ] || printf '%s\n' "${paths[i]}:${paths[i]}:${modes[i]}"
   done
 }
 
@@ -137,12 +162,19 @@ mounted() {  # NAME
 
 # Give NAME the wanted mounts it lacks: configured if stopped, attached until it stops if running.
 sync_mounts() {  # ROOT NAME
-  local root=$1 name=$2 have m guest
+  local root=$1 name=$2 have m guest covered
   have=$(mounted "$name")
   while IFS= read -r m; do
     guest=${m#*:}; guest=${guest%:*}
     grep -qxF -- "$guest" <<<"$have" && continue
     if [ "$(state "$name")" = running ]; then
+      # Attaching binds GUEST over whatever is mounted inside it now, the repo
+      # included. At a start, smolvm mounts parents first instead.
+      covered=$(awk -v p="$guest/" 'index($0, p) == 1 { print; exit }' <<<"$have")
+      if [ -n "$covered" ]; then
+        echo "smv: not mounting $guest in $name while it runs, since it would cover $covered; smv stop, then open it again" >&2
+        continue
+      fi
       echo "smv: mounting $guest in $name until it stops" >&2
       smolvm machine mount add --name "$name" -v "${m%:rw}" >&2 \
         || echo "smv: could not mount $guest; smv stop, then open it again" >&2
