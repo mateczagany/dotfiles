@@ -19,7 +19,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("gD", vim.lsp.buf.declaration, "Goto Declaration")
     map("go", vim.lsp.buf.type_definition, "Goto Type Definition")
     map("gs", vim.lsp.buf.signature_help, "Signature Help")
-    map("gl", vim.diagnostic.open_float, "Line Diagnostics")
+    map("gh", vim.diagnostic.open_float, "Line Diagnostics")
     map("<leader>lr", vim.lsp.buf.rename, "Rename")
     map("<leader>lf", function()
       local ok, conform = pcall(require, "conform")
@@ -114,6 +114,23 @@ else
     callback = function()
       vim.notify(
         "helm_ls not found in PATH.\nhttps://github.com/mrjosh/helm-ls",
+        vim.log.levels.WARN,
+        { title = "nvim-lspconfig" }
+      )
+    end,
+  })
+end
+
+if vim.fn.executable("zls") == 1 then
+  vim.lsp.enable("zls")
+else
+  vim.api.nvim_create_autocmd("FileType", {
+    group = lsp_group,
+    pattern = "zig",
+    once = true,
+    callback = function()
+      vim.notify(
+        "zls not found in PATH.\nbrew install zig zls",
         vim.log.levels.WARN,
         { title = "nvim-lspconfig" }
       )

@@ -9,6 +9,9 @@ fi
 alias fix-keys="hidutil property --set '{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x7000000e7,\"HIDKeyboardModifierMappingDst\":0x7000000e6},{\"HIDKeyboardModifierMappingSrc\":0x7000000e6,\"HIDKeyboardModifierMappingDst\":0x7000000e7}]}'"
 export ZSH_HIGHLIGHT_DIRS_BLACKLIST=(/net)
 
+# dotfiles PATH
+export PATH="$HOME/dev/repos/dotfiles/scripts:$PATH"
+
 # Homebrew
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 
@@ -27,7 +30,7 @@ alias gcc='gcc-13'
 export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
 
 # nvim
-export PATH="$PATH:/Users/czmate10/.local/bin"
+export PATH="$PATH:/Users/$USER/.local/bin"
 export EDITOR=nvim
 alias vi=nvim
 alias vim=nvim
@@ -39,7 +42,7 @@ export GIT_EXTERNAL_DIFF=difft git diff
 export PATH=~/.opencode/bin:$PATH
 
 # Hadoop
-# export PATH="$PATH:/Users/czmate10/dev/hadoop-3.3.4/bin"
+# export PATH="$PATH:/Users/$USER/dev/hadoop-3.3.4/bin"
 # export HADOOP_CLASSPATH=`hadoop classpath`
 
 # Path to your oh-my-zsh installation.
@@ -220,3 +223,4 @@ source $ZSH/oh-my-zsh.sh
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+source <(smolvm completion zsh)

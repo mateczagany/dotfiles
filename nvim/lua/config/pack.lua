@@ -18,6 +18,7 @@ local treesitter_languages = {
   "typescript",
   "vim",
   "yaml",
+  "zig",
 }
 
 vim.api.nvim_create_autocmd("PackChanged", {
@@ -125,5 +126,6 @@ require("conform").setup({
     css = { "prettier" },
     html = { "prettier" },
     json = { "prettier" },
+    zig = { "zigfmt" },
   },
 })
