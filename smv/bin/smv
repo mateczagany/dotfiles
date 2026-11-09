@@ -105,21 +105,25 @@ memory_dir() {  # ROOT
 
 # Mounts every machine gets besides its repo, one HOST:GUEST:MODE per line.
 wanted() {  # ROOT
-  local root=$1 mode line mem
+  local root=$1 mode list line mem
   printf '%s\n' "$CFG/shared:/opt/smv:ro" "$HOME/.claude/skills:/opt/claude-skills:ro"
   # Claude's memory for this repo, shared with Claude on the Mac; setup.d/memory.sh
   # links it into ~/.claude in the machine.
   mem=$(memory_dir "$root")
   [ -z "$mem" ] || printf '%s\n' "${mem}:${mem}:rw"
-  for mode in ro rw; do                            # your folders, at the same path
-    [ -f "$CFG/$mode-mounts" ] || continue
-    while IFS= read -r line; do
-      line=${line/#\~/$HOME}
-      case "$line" in ''|'#'*) continue ;; esac
-      case "$root/" in "$line"/*) continue ;; esac   # the repo itself, or inside it
-      case "$line/" in "$root"/*) continue ;; esac   # already mounted with the repo
-      [ -d "$line" ] && printf '%s\n' "$line:$line:$mode"
-    done < "$CFG/$mode-mounts"
+  # Your folders, at the same path. The .local lists are git-ignored, for paths
+  # you'd rather not commit.
+  for mode in ro rw; do
+    for list in "$CFG/$mode-mounts" "$CFG/$mode-mounts.local"; do
+      [ -f "$list" ] || continue
+      while IFS= read -r line; do
+        line=${line/#\~/$HOME}
+        case "$line" in ''|'#'*) continue ;; esac
+        case "$root/" in "$line"/*) continue ;; esac   # the repo itself, or inside it
+        case "$line/" in "$root"/*) continue ;; esac   # already mounted with the repo
+        [ -d "$line" ] && printf '%s\n' "$line:$line:$mode"
+      done < "$list"
+    done
   done
 }
 

@@ -51,6 +51,7 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 | `Smolfile` | The machine definition: image, CPUs, memory, network, first-start setup |
 | `ro-mounts` | Mac folders every machine sees read-only, one per line (`~/…` works) |
 | `rw-mounts` | Same, read-write |
+| `ro-mounts.local`, `rw-mounts.local` | Same as the two above, but git-ignored: for paths you'd rather not commit |
 | `repos/cc-<repo>.init` | Extra first-start commands for one repo's machine, one per line, run as root |
 | `shared/` | Mounted read-only at `/opt/smv` in every machine |
 | `shared/claude-start` | Runs before every Claude start in a machine (see below) |
@@ -100,10 +101,11 @@ A worktree's `.git` file points back to the main repo by absolute path, and only
 ## Inside a machine
 
 - User `dev` with your Mac's uid (501) and passwordless sudo. `/home/dev` lives on the machine's disk and survives stops; `/tmp` does not.
-- Temurin 21, Maven, Python 3.14 with `uv`, Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
+- Temurin 21, Maven, Python 3.14 with `uv`, `sqlite3`, Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
 - Network: HTTP and HTTPS to the internet, through the egress proxy; LAN, VPN ranges and the Mac's own ports closed (`block_private`). Other TCP (SSH, databases on the internet) and UDP other than DNS are blocked.
 - `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold placeholders, not the tokens.
-- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus `ro-mounts` and `rw-mounts` at their Mac paths.
+- Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus the folders in `ro-mounts`, `rw-mounts` and their `.local` versions at their Mac paths.
+- A SQLite database in WAL mode won't open from a read-only mount the usual way: SQLite needs to create its `-shm` file next to it. `sqlite3 'file:PATH?immutable=1'` works, and `shared/CLAUDE.md` tells Claude so. It reads only the main file, so writes a Mac program still holds in the `-wal` file don't show up until that program checkpoints or closes the database.
 - `smv sh` opens zsh with this repo's `.zshrc` and nvim with its `nvim/` config, both read from the `~/dev/repos/dotfiles` mount, so an edit on the Mac shows up at the next shell or nvim start. A machine's first start runs `shell-setup`, which installs oh-my-zsh with the theme and plugins the `.zshrc` loads, Neovim from GitHub (the config needs 0.12, Ubuntu has 0.11), and nvim's plugins and treesitter parsers. Every `smv sh` runs it again, so whatever failed at the first start gets installed then.
 - The prompt uses `.p10k.zsh` from this repo if there is one, and p10k's defaults otherwise. Either way it starts with the machine's name (`cc-<repo>`) in yellow, set in `shared/zshrc`, so a machine shell doesn't look like the Mac's.
 - There is no system clipboard. `pbcopy`, `pbpaste` and nvim's `+` register share `~/.cache/smv-clipboard`, so the vi-mode `y` and `p` in zsh and yanks in nvim work together inside one machine. Each copy is also sent as OSC 52, which reaches the Mac clipboard only if `~/.tmux.conf` has `set -g set-clipboard on`.
@@ -168,7 +170,7 @@ Keep `~/.local/state/smv` out of `ro-mounts` and `rw-mounts`: it holds the CA's 
 | --- | --- |
 | `shared/` (CLAUDE files, `claude-start`, `setup.d/`) | Next Claude start, in every machine |
 | `shared/` shell files, this repo's `.zshrc` and `nvim/` | Next `smv sh` (or nvim start), in every machine. To update Neovim in one: `rm -rf ~/.local/nvim` in it, then `smv sh` |
-| `ro-mounts`, `rw-mounts` | Next time `smv` opens a machine: attached right away if it's running, added for good at its next start from stopped |
+| `ro-mounts`, `rw-mounts` and their `.local` versions | Next time `smv` opens a machine: attached right away if it's running, added for good at its next start from stopped |
 | `bin/` | Immediately |
 | `egress.py`, `~/.local/state/smv/personal` | Immediately: the proxy reloads both when they change |
 | `shared/docker-runc` | The next container started, in machines made since it was added |
@@ -198,6 +200,7 @@ Claude working in this repo's own machine (`cc-dotfiles`) edits the live files e
 | Every request from the machines fails | The proxy stopped: `smv proxy`. `smv log` shows whether requests reach it |
 | A 403 "Blocked by the smv egress proxy" | `smv log` names the line of `~/.local/state/smv/personal` that matched |
 | A skill or `~/…` import is missing in a machine | Add its folder to `ro-mounts`; check with `ls -l ~/dev/…` in `smv sh` after a Claude start |
+| `sqlite3`: "unable to open database file" for a database in a read-only mount | It's in WAL mode; open it as `sqlite3 'file:PATH?immutable=1'` (see [Inside a machine](#inside-a-machine)) |
 | `smv: adding mount …` on every open | smolvm changed its `machine ls -v` output, which `smv` reads |
 | `smv`: "gave up waiting for …lock" | A killed `smv` left its lock: `rmdir "$TMPDIR"/smv-cc-*.lock` |
 | `docker` can't connect | `sudo tail /var/log/dockerd.log` in the machine |

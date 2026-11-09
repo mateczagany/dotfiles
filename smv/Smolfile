@@ -20,7 +20,7 @@ init = [
   # The egress proxy's CA (bin/smv mounts it here) for what ignores SSL_CERT_FILE: sudo, apt, Java.
   "cp /etc/smolvm-host-trust/ca-bundle.pem /usr/local/share/ca-certificates/smv-egress.crt && update-ca-certificates >/dev/null 2>&1 && keytool -importcert -noprompt -cacerts -storepass changeit -alias smv-egress -file /usr/local/share/ca-certificates/smv-egress.crt >/dev/null 2>&1",
   "ln -sf /opt/smv/docker-runc /usr/local/sbin/runc",   # and Docker's containers, ahead of the real runc on dockerd's PATH
-  "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -yqq git curl zip unzip ca-certificates openssh-client ripgrep jq less procps sudo maven openjdk-17-jdk-headless python3 python3-venv python3-pip docker.io docker-compose-v2 docker-buildx zsh tree-sitter-cli >/dev/null",
+  "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -yqq git curl zip unzip ca-certificates openssh-client ripgrep jq less procps sqlite3 sudo maven openjdk-17-jdk-headless python3 python3-venv python3-pip docker.io docker-compose-v2 docker-buildx zsh tree-sitter-cli >/dev/null",
   "useradd -m -s /bin/bash -u 501 dev && usermod -aG docker dev && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev",   # 501 = id -u on your Mac
   "git config --system --add safe.directory '*'",
   "runuser -l dev -c 'curl -fsSL https://claude.ai/install.sh | bash'",
