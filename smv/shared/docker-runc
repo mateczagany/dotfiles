@@ -1,0 +1,102 @@
+#!/bin/sh
+# runc for Docker in smv machines. The Smolfile links it to /usr/local/sbin/runc,
+# ahead of the real one on dockerd's PATH, so docker run, compose, Testcontainers
+# and docker build steps all start their containers through it. It gives each
+# container the egress proxy's CA, then hands over to the real runc:
+#
+#  - the machine's CA bundle at /dev/smv-egress-ca.pem, with SSL_CERT_FILE,
+#    NODE_EXTRA_CA_CERTS and the like pointing at it. A bundle the image had
+#    pointed one of them at is appended, so its own CAs stay trusted. Every
+#    container gets a fresh tmpfs at /dev, so the mount point never ends up in
+#    the layers of an image built here.
+#  - the machine's Java keystore, read-only, over the image's when the image sets
+#    JAVA_HOME. A container or build step that adds certificates to that
+#    keystore fails.
+#
+# docker exec gets the same variables. If anything here fails, the container
+# starts without these changes.
+
+CA=/etc/ssl/certs/ca-certificates.crt              # public roots plus the proxy CA
+KEYSTORE=/opt/java/openjdk/lib/security/cacerts    # Temurin's, plus the proxy CA
+GUEST_CA=/dev/smv-egress-ca.pem
+VARS="SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE NODE_EXTRA_CA_CERTS PIP_CERT GIT_SSL_CAINFO AWS_CA_BUNDLE CARGO_HTTP_CAINFO DENO_CERT"
+
+self=$(readlink -f "$0")
+for real in /usr/sbin/runc /usr/bin/runc ""; do
+  [ -x "$real" ] && [ "$(readlink -f "$real")" != "$self" ] && break
+done
+[ -n "$real" ] || { echo "smv docker-runc: no runc in /usr/sbin or /usr/bin" >&2; exit 1; }
+
+# PATH inside the container whose root is ROOT, with symlinks followed there
+# (absolute ones too); prints nothing if it doesn't exist.
+in_root() {  # ROOT PATH
+  r_root=$1 r_rest=${2#/} r_done='' r_hops=0
+  while [ -n "$r_rest" ]; do
+    r_part=${r_rest%%/*}
+    case $r_rest in */*) r_rest=${r_rest#*/} ;; *) r_rest= ;; esac
+    case $r_part in ''|.) continue ;; ..) r_done=${r_done%/*}; continue ;; esac
+    if [ -L "$r_root$r_done/$r_part" ]; then
+      r_hops=$((r_hops + 1)); [ "$r_hops" -le 40 ] || return 0
+      r_link=$(readlink "$r_root$r_done/$r_part")
+      case $r_link in /*) r_done= ;; esac
+      r_rest=${r_link#/}${r_rest:+/$r_rest}
+    else
+      r_done=$r_done/$r_part
+    fi
+  done
+  [ -f "$r_root$r_done" ] && printf '%s\n' "$r_done"
+}
+
+with_ca() {  # FILE spec|process
+  [ -f "$1" ] && [ -f "$CA" ] || return 0
+  ca=$CA keystore=''
+  if [ "$2" = spec ]; then
+    root=$(jq -r '.root.path // empty' "$1") || return 0
+    case $root in /*) ;; *) root=$(dirname "$1")/$root ;; esac
+    # Bundles the image points the variables at, to append to this container's copy.
+    own=$(jq -r --arg vars "$VARS" '($vars | split(" ")) as $names | .process.env[]?
+      | capture("^(?<k>[^=]*)=(?<v>.*)$") | select(.k | IN($names[])) | .v' "$1" | sort -u |
+      while IFS= read -r p; do
+        f=$(in_root "$root" "$p"); [ -z "$f" ] || printf '%s\n' "$root$f"
+      done)
+    if [ -n "$own" ]; then
+      ca=$(dirname "$1")/smv-egress-ca.pem           # the OCI bundle dir goes with the container
+      { cat "$CA"; printf '%s\n' "$own" | while IFS= read -r f; do cat "$f"; echo; done; } > "$ca" || ca=$CA
+    fi
+    java_home=$(jq -r '.process.env[]? | select(startswith("JAVA_HOME=")) | .[10:]' "$1" | head -n 1)
+    if [ -n "$java_home" ] && [ -f "$KEYSTORE" ]; then
+      keystore=$(in_root "$root" "$java_home/lib/security/cacerts")
+      [ -n "$keystore" ] || keystore=$(in_root "$root" "$java_home/jre/lib/security/cacerts")
+    fi
+    # shellcheck disable=SC2016  # jq variables
+    filter='.process.env |= set_vars | .mounts += [mount($ca; $guest)]
+      | if $keystore == "" then . else .mounts += [mount($keystore_src; $keystore)] end'
+  else
+    filter='.env |= set_vars'
+  fi
+  jq --arg ca "$ca" --arg guest "$GUEST_CA" --arg vars "$VARS" \
+     --arg keystore_src "$KEYSTORE" --arg keystore "$keystore" "
+    def mount(src; dst): {destination: dst, type: \"bind\", source: src, options: [\"rbind\", \"ro\"]};
+    def set_vars: (\$vars | split(\" \")) as \$names
+      | [(. // [])[] | select(split(\"=\")[0] | IN(\$names[]) | not)] + [\$names[] + \"=\" + \$guest];
+    $filter" "$1" > "$1.smv" && mv "$1.smv" "$1"
+  rm -f "$1.smv"
+}
+
+# The subcommand is the first word that isn't a global flag or its value.
+sub='' bundle=. process='' prev=''
+for a in "$@"; do
+  if [ -z "$sub" ]; then
+    case $prev in --root|--log|--log-format|--criu) ;; *) case $a in -*) ;; *) sub=$a ;; esac ;; esac
+  else
+    case $prev in --bundle|-b) bundle=$a ;; --process|-p) process=$a ;; esac
+    case $a in --bundle=*) bundle=${a#*=} ;; --process=*) process=${a#*=} ;; esac
+  fi
+  prev=$a
+done
+
+case $sub in
+  create|run) with_ca "$bundle/config.json" spec ;;
+  exec) [ -z "$process" ] || with_ca "$process" process ;;
+esac
+exec "$real" "$@"

@@ -138,6 +138,9 @@ else
   })
 end
 
+-- Only where the sqrl repo is checked out (not in most smv machines)
 local sqrl_repo = vim.fn.expand("~/dev/datasqrl/sqrl")
-vim.opt.runtimepath:append(sqrl_repo .. "/sqrl-nvim-plugin")
-require("sqrl").setup({ jar = sqrl_repo .. "/sqrl-cli/target/sqrl-cli.jar" })
+if vim.uv.fs_stat(sqrl_repo .. "/sqrl-nvim-plugin") then
+  vim.opt.runtimepath:append(sqrl_repo .. "/sqrl-nvim-plugin")
+  require("sqrl").setup({ jar = sqrl_repo .. "/sqrl-cli/target/sqrl-cli.jar" })
+end

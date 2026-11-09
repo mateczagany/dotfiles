@@ -1,0 +1,45 @@
+#!/bin/sh
+# Runs inside the machine as dev: pre-answer Claude's first-run prompts, then start it.
+set -e
+
+# Trust this worktree and its main checkout; skip onboarding (undocumented key).
+cfg="$HOME/.claude.json"
+top=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+main=$top; [ -n "$common" ] && main=$(dirname "$common")
+[ -s "$cfg" ] || echo '{}' > "$cfg"
+jq --arg top "$top" --arg main "$main" '
+  .hasCompletedOnboarding = true
+  | .projects[$top].hasTrustDialogAccepted = true
+  | .projects[$main].hasTrustDialogAccepted = true' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+
+# Dark theme unless you picked another; never ask to confirm bypass mode.
+mkdir -p "$HOME/.claude"
+s="$HOME/.claude/settings.json"
+[ -s "$s" ] || echo '{}' > "$s"
+jq '.theme //= "dark" | .tui //= "default" | .skipDangerousModePermissionPrompt = true' "$s" > "$s.tmp" && mv "$s.tmp" "$s"
+
+# Your Mac's skills (mounted read-only at /opt/claude-skills) and global CLAUDE.md.
+mkdir -p "$HOME/.claude/skills"
+find "$HOME/.claude/skills" -maxdepth 1 -type l ! -exec test -e {} \; -delete   # skills removed on the Mac
+for d in /opt/claude-skills/*/; do
+  [ -d "$d" ] || continue
+  dst="$HOME/.claude/skills/$(basename "$d")"
+  [ -e "$dst" ] || ln -sfn "${d%/}" "$dst"        # keep links a skill's own installer made
+done
+m="$HOME/.claude/CLAUDE.md"
+for line in '@/opt/smv/CLAUDE.global.md' '@/opt/smv/CLAUDE.md'; do
+  grep -qxF "$line" "$m" 2>/dev/null || echo "$line" >> "$m"
+done
+
+# Your setup scripts in ~/.config/smv/shared/setup.d/, at every start: keep them idempotent.
+for f in /opt/smv/setup.d/*.sh; do
+  [ -f "$f" ] || continue
+  sh "$f" || echo "claude-start: $f failed; starting Claude anyway" >&2
+done
+
+# Opus at xhigh effort unless already set; /model and /effort still change a session.
+export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-opus}"
+export CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-xhigh}"
+
+exec claude --dangerously-skip-permissions "$@"

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Runs inside the machine as dev for smv sh: the setup.d steps Claude also gets, then
+# shell-setup, then your zsh. Falls back to bash if zsh couldn't be installed.
+for f in /opt/smv/setup.d/*.sh; do
+  [ -f "$f" ] || continue
+  sh "$f" || echo "shell-start: $f failed" >&2
+done
+sh /opt/smv/shell-setup || echo "shell-start: shell-setup failed" >&2
+
+if command -v zsh >/dev/null && [ -e "$HOME/.zshrc" ]; then exec zsh -l; fi
+exec bash -l

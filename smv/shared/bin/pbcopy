@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stand-in for macOS pbcopy, which the vi-mode widgets in your .zshrc call. Keeps the text
+# in a file for pbpaste and nvim in this machine, and sends it to the Mac clipboard with
+# OSC 52 (tmux passes that on only with `set -g set-clipboard on`).
+f=$HOME/.cache/smv-clipboard
+mkdir -p "${f%/*}"
+cat > "$f"
+{ printf '\033]52;c;'; base64 -w0 < "$f"; printf '\033\\'; } 2>/dev/null > /dev/tty || true

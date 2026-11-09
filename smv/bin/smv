@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# smv: one smolvm machine per git repo, Claude Code inside it.
+# usage: smv claude|sh|root|up|stop|rm|state [DIR] [ARGS] · smv ls · smv stop-all · smv log [N] · smv proxy
+set -euo pipefail
+
+CFG="${SMV_CONFIG:-$HOME/.config/smv}"
+TOKEN_ITEM="${SMV_TOKEN_ITEM:-claude-code-oauth}"   # Keychain item holding the token
+GH_ITEM="${SMV_GH_ITEM:-github-readonly}"           # optional: read-only GitHub token
+STATE="${SMV_STATE:-$HOME/.local/state/smv}"        # the egress proxy's CA key, token, log and personal list
+EGRESS_PORT="${SMV_EGRESS_PORT:-47130}"             # its decider; mitmproxy listens on the next port
+# What the machines hold instead of the tokens; the egress proxy swaps in the real ones.
+CLAUDE_PLACEHOLDER=sk-ant-oat01-smv-claude-placeholder-the-egress-proxy-adds-the-real-token
+GH_PLACEHOLDER=smv-github-placeholder-the-egress-proxy-adds-the-real-token
+
+die() { printf 'smv: %s\n' "$*" >&2; exit 1; }
+
+# The main checkout that owns DIR, from any of its worktrees.
+repo_root() {
+  local common
+  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    || die "$1 is not inside a git repo"
+  (cd "$(dirname "$common")" && pwd -P)
+}
+
+machine_name() { printf 'cc-%s' "$(basename "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-')"; }
+
+state() { smolvm machine status --name "$1" --json 2>/dev/null | jq -r '.state // empty' || true; }
+
+# smolvm wants one lifecycle command per machine at a time; tmux can fire several.
+lock() {
+  LOCK="${TMPDIR:-/tmp}/smv-$1.lock"
+  local n=0
+  until mkdir "$LOCK" 2>/dev/null; do
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then rmdir "$LOCK"; continue; fi
+    n=$((n + 1)); [ "$n" -gt 1500 ] && die "gave up waiting for $LOCK"
+    sleep 0.2
+  done
+  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+}
+unlock() { rmdir "$LOCK" 2>/dev/null || true; trap - EXIT; }
+
+# The egress proxy: egress.py in mitmdump, on the Mac. Every machine's outbound
+# TCP goes through it, and a machine can't start or reach anything without it.
+proxy_running() { nc -z 127.0.0.1 "$EGRESS_PORT" >/dev/null 2>&1; }
+
+proxy_up() {
+  proxy_running && return 0
+  command -v mitmdump >/dev/null || die "the egress proxy needs mitmproxy: brew install mitmproxy"
+  lock egress-proxy
+  if ! proxy_running; then
+    mkdir -p "$STATE/machines"; chmod 700 "$STATE"
+    [ -s "$STATE/token" ] || (umask 077; od -An -tx1 -N32 /dev/urandom | tr -d ' \n' > "$STATE/token")
+    if [ ! -e "$STATE/personal" ]; then
+      { echo "# Text no request from a machine may contain, one per line (see README.md)"
+        git config --global user.email || true
+        git config --global user.name || true
+      } > "$STATE/personal"
+    fi
+    echo "smv: starting the egress proxy; smv log shows what goes out" >&2
+    # set -m: its own process group, so a Ctrl-C in this terminal doesn't stop it
+    set -m
+    SMV_STATE="$STATE" SMV_EGRESS_PORT="$EGRESS_PORT" SMV_TOKEN_ITEM="$TOKEN_ITEM" SMV_GH_ITEM="$GH_ITEM" \
+    SMV_CLAUDE_PLACEHOLDER="$CLAUDE_PLACEHOLDER" SMV_GH_PLACEHOLDER="$GH_PLACEHOLDER" PYTHONDONTWRITEBYTECODE=1 \
+      nohup mitmdump --listen-host 127.0.0.1 --listen-port $((EGRESS_PORT + 1)) \
+        --set confdir="$STATE/mitmproxy" --set flow_detail=0 --set termlog_verbosity=warn \
+        -s "$CFG/egress.py" >>"$STATE/proxy.out" 2>&1 </dev/null &
+    echo $! > "$STATE/proxy.pid"
+    set +m
+    for _ in $(seq 1 100); do proxy_running && break; sleep 0.1; done
+  fi
+  unlock
+  proxy_running || die "the egress proxy did not start; see $STATE/proxy.out"
+}
+
+proxy_stop() {
+  local pid
+  pid=$(cat "$STATE/proxy.pid" 2>/dev/null) || return 0
+  case "$(ps -p "$pid" -o command= 2>/dev/null)" in *mitmdump*) kill "$pid" ;; esac
+  for _ in $(seq 1 50); do proxy_running || break; sleep 0.1; done
+  rm -f "$STATE/proxy.pid"
+}
+
+# Start NAME with each outbound TCP flow handed to the egress proxy, and note
+# the mediation ID smolvm gave this launch so the proxy's log can name it.
+start() {  # NAME
+  local out id
+  out=$(mktemp "$STATE/start.XXXXXX")
+  if ! SMOLVM_INTERCEPTOR_TOKEN=$(cat "$STATE/token") smolvm machine start --name "$1" \
+      --egress-interceptor "127.0.0.1:$EGRESS_PORT" --mediated-egress | tee "$out" >&2; then
+    rm -f "$out"; return 1
+  fi
+  id=$(sed -n 's/^Mediation machine ID: //p' "$out"); rm -f "$out"
+  [ -z "$id" ] || printf '%s\n' "$1" > "$STATE/machines/$id"
+}
+
+# Mounts every machine gets besides its repo, one HOST:GUEST:MODE per line.
+wanted() {  # ROOT
+  local root=$1 mode line
+  printf '%s\n' "$CFG/shared:/opt/smv:ro" "$HOME/.claude/skills:/opt/claude-skills:ro"
+  for mode in ro rw; do                            # your folders, at the same path
+    [ -f "$CFG/$mode-mounts" ] || continue
+    while IFS= read -r line; do
+      line=${line/#\~/$HOME}
+      case "$line" in ''|'#'*) continue ;; esac
+      case "$root/" in "$line"/*) continue ;; esac   # the repo itself, or inside it
+      case "$line/" in "$root"/*) continue ;; esac   # already mounted with the repo
+      [ -d "$line" ] && printf '%s\n' "$line:$line:$mode"
+    done < "$CFG/$mode-mounts"
+  done
+}
+
+# Guest paths NAME mounts now: its configured ones, plus any attached while it runs.
+mounted() {  # NAME
+  smolvm machine ls -v | awk -v n="$1" '
+    /^[^ ]/ { cur = $1 }
+    cur == n && sub(/^  Mount: .* -> /, "") { sub(/ \(ro\)$/, ""); print }'
+  smolvm machine mount ls --name "$1" --json 2>/dev/null | jq -r '.[].target' 2>/dev/null || true
+}
+
+# Give NAME the wanted mounts it lacks: configured if stopped, attached until it stops if running.
+sync_mounts() {  # ROOT NAME
+  local root=$1 name=$2 have m guest
+  have=$(mounted "$name")
+  while IFS= read -r m; do
+    guest=${m#*:}; guest=${guest%:*}
+    grep -qxF -- "$guest" <<<"$have" && continue
+    if [ "$(state "$name")" = running ]; then
+      echo "smv: mounting $guest in $name until it stops" >&2
+      smolvm machine mount add --name "$name" -v "${m%:rw}" >&2 \
+        || echo "smv: could not mount $guest; smv stop, then open it again" >&2
+    else
+      echo "smv: adding mount $guest to $name" >&2
+      smolvm machine update --name "$name" -v "$m" >&2 \
+        || echo "smv: could not add $guest to $name" >&2
+    fi
+  done < <(wanted "$root")
+}
+
+# Names come from the folder name alone, so two repos called flink would share cc-flink.
+# Stop if NAME exists but was made for another folder.
+check_owner() {  # ROOT NAME
+  local have
+  [ -n "$(state "$2")" ] || return 0
+  have=$(mounted "$2")
+  grep -qxF -- "$1" <<<"$have" && return 0
+  die "$2 was made for another folder, so it doesn't mount $1; rename this folder, or delete that machine with: smolvm machine delete --name $2 --force"
+}
+
+create() {  # ROOT NAME
+  local root=$1 name=$2 line m extra=()
+  [ -f "$CFG/Smolfile" ] || die "missing $CFG/Smolfile"
+  if [ -f "$CFG/repos/$name.init" ]; then          # per-repo toolchain, one command per line
+    while IFS= read -r line; do
+      case "$line" in ''|'#'*) ;; *) extra+=(--init "$line") ;; esac
+    done < "$CFG/repos/$name.init"
+  fi
+  while IFS= read -r m; do extra+=(-v "$m"); done < <(wanted "$root")
+  # --trust-host-certs with this bundle: the image pull and everything that reads
+  # SSL_CERT_FILE and the like trust the egress proxy's CA (the Smolfile adds it
+  # to the system store and Java's keystore).
+  SMOLVM_HOST_CA_BUNDLE="$STATE/mitmproxy/mitmproxy-ca-cert.pem" \
+  smolvm machine create --name "$name" -s "$CFG/Smolfile" \
+    -v "$root:$root" \
+    --trust-host-certs \
+    --init "git config --system user.name \"$(git -C "$root" config user.name)\"" \
+    --init "git config --system user.email \"$(git -C "$root" config user.email)\"" \
+    ${extra[@]+"${extra[@]}"}
+}
+
+up() {  # DIR -> prints the machine name once it answers
+  local root name
+  root=$(repo_root "$1"); name=$(machine_name "$root")
+  mkdir -p "$HOME/.claude/skills"                  # mount sources must exist
+  proxy_up
+  lock "$name"
+  # in_vm calls this as $(up ...), where bash ignores set -e, so check each step.
+  if [ -z "$(state "$name")" ]; then
+    echo "smv: creating $name for $root" >&2
+    create "$root" "$name" >&2 || die "could not create $name"
+  else
+    check_owner "$root" "$name"
+    sync_mounts "$root" "$name"                    # folders listed since it was made
+  fi
+  if [ "$(state "$name")" != running ]; then
+    echo "smv: starting $name (a new machine's first start installs everything, a few minutes)" >&2
+    start "$name" || die "could not start $name; see: smolvm machine logs --name $name"
+  fi
+  unlock
+  # A machine made before the egress proxy lacks its CA, and if it was already
+  # running, its traffic doesn't go through the proxy at all.
+  for _ in $(seq 1 120); do
+    case "$(smolvm machine exec --name "$name" -- sh -c \
+        'if [ -s /etc/smolvm-host-trust/ca-bundle.pem ]; then echo READY; else echo OLD; fi' 2>/dev/null | tr -d '\r')" in
+      READY) echo "$name"; return 0 ;;
+      OLD) die "$name predates the egress proxy; rebuild it (this loses its Claude history and caches): smv rm $1 && smv up $1" ;;
+    esac
+    sleep 1
+  done
+  die "$name did not answer; see: smolvm machine logs --name $name"
+}
+
+in_vm() {  # DIR USER CMD...
+  local dir user=$2 root name rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
+  local -a restore
+  dir=$(cd "$1" && pwd -P); shift 2
+  root=$(repo_root "$dir")
+  case "$dir/" in
+    "$root"/*) ;;
+    *) die "$dir is outside $root, so the machine can't see it (git worktree move it under the repo)" ;;
+  esac
+  name=$(up "$dir")
+  env+=(-e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_PLACEHOLDER")
+  if security find-generic-password -s "$GH_ITEM" >/dev/null 2>&1; then
+    env+=(-e "GH_TOKEN=$GH_PLACEHOLDER")            # gh and git over HTTPS in the machine
+  fi
+  set -- smolvm machine exec --name "$name" -it -u "$user" -w "$dir" "${env[@]}" -- "$@"
+
+  # With NAME_WINDOW=1 in tmux (smv sh, smv root), the window takes the machine's
+  # name until the shell exits, then gets its old name back.
+  if [ "${NAME_WINDOW:-}" != 1 ] || [ -z "${TMUX_PANE:-}" ]; then exec "$@"; fi
+  if [ "$(tmux display -p -t "$TMUX_PANE" '#{automatic-rename}')" = 1 ]; then
+    restore=(set-option -wu -t "$TMUX_PANE" automatic-rename)
+  else
+    restore=(rename-window -t "$TMUX_PANE" "$(tmux display -p -t "$TMUX_PANE" '#W')")
+  fi
+  tmux rename-window -t "$TMUX_PANE" "$name"
+  "$@" || rc=$?
+  tmux "${restore[@]}" 2>/dev/null || true   # the window may be gone already
+  exit "$rc"
+}
+
+# The machine for DIR, for commands that act on an existing one. Call it as
+# n=$(machine_for DIR) on its own: set -e stops on a failed assignment, not on
+# a failed $(...) inside another command's arguments.
+machine_for() {  # DIR -> NAME
+  local root name
+  root=$(repo_root "${1:-$PWD}") || exit 1
+  name=$(machine_name "$root")
+  check_owner "$root" "$name"
+  printf '%s\n' "$name"
+}
+
+cmd=${1:-help}; [ $# -gt 0 ] && shift
+case "$cmd" in
+  claude)
+    d=$PWD; if [ $# -gt 0 ] && [ -d "$1" ]; then d=$1; shift; fi
+    in_vm "$d" dev env HOME=/home/dev sh /opt/smv/claude-start "$@" ;;
+  sh)       NAME_WINDOW=1 in_vm "${1:-$PWD}" dev env HOME=/home/dev sh /opt/smv/shell-start ;;
+  root)     NAME_WINDOW=1 in_vm "${1:-$PWD}" root bash -l ;;
+  up)       up "${1:-$PWD}" >/dev/null ;;
+  state)    n=$(machine_for "${1:-}"); state "$n" ;;
+  stop)     n=$(machine_for "${1:-}"); lock "$n"; smolvm machine stop --name "$n"; unlock ;;
+  rm)       n=$(machine_for "${1:-}"); lock "$n"; smolvm machine delete --name "$n" --force; unlock ;;
+  ls)       smolvm machine ls ;;
+  stop-all) smolvm machine ls --json \
+              | jq -r '.[] | select(.name | startswith("cc-")) | select(.state == "running") | .name' \
+              | while read -r n; do smolvm machine stop --name "$n"; done ;;
+  log)      [ -s "$STATE/egress.log" ] || die "nothing logged yet in $STATE/egress.log"
+            tail -n "${1:-40}" -F "$STATE/egress.log" | jq -r --unbuffered '
+              [.ts[11:], .vm // "-", .verdict, .method // "-", (.status // "-" | tostring),
+               .url // .dest, .reason // ""] | @tsv' ;;
+  proxy)    proxy_stop; proxy_up ;;             # restart it, e.g. to read a renewed token
+  *)        sed -n '2,3p' "$0" ;;
+esac

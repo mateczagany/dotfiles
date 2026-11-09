@@ -1,0 +1,41 @@
+# ~/.config/smv/Smolfile: Java + Docker + Python, shared by every cc-<repo> machine
+image = "eclipse-temurin:21-jdk"     # Ubuntu 26.04 with Temurin 21 in /opt/java/openjdk
+net = true
+net_backend = "virtio-net"           # a real eth0, for containers on Docker's bridge network
+cpus = 16
+memory = 32768
+storage = 60                         # GiB, sparse: images, ~/.m2, ~/.gradle
+docker_socket = true                 # a docker client on the Mac can drive this machine's daemon
+volumes = ["/var/lib/docker", "/var/lib/containerd"]   # Docker's data on the machine's disk (v1.28.1+)
+env = [
+  "PATH=/home/dev/.local/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "PIP_BREAK_SYSTEM_PACKAGES=1",
+]
+
+# The workload, as root on every start: keeps dockerd running and the machine up.
+entrypoint = ["/bin/sh", "-c"]
+cmd = ["while true; do if command -v dockerd >/dev/null && ! pgrep -x dockerd >/dev/null; then rm -f /var/run/docker.pid; dockerd --group dev >>/var/log/dockerd.log 2>&1 & fi; sleep 5; done"]
+
+init = [
+  # The egress proxy's CA (bin/smv mounts it here) for what ignores SSL_CERT_FILE: sudo, apt, Java.
+  "cp /etc/smolvm-host-trust/ca-bundle.pem /usr/local/share/ca-certificates/smv-egress.crt && update-ca-certificates >/dev/null 2>&1 && keytool -importcert -noprompt -cacerts -storepass changeit -alias smv-egress -file /usr/local/share/ca-certificates/smv-egress.crt >/dev/null 2>&1",
+  "ln -sf /opt/smv/docker-runc /usr/local/sbin/runc",   # and Docker's containers, ahead of the real runc on dockerd's PATH
+  "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -yqq git curl zip unzip ca-certificates openssh-client ripgrep jq less procps sudo maven openjdk-17-jdk-headless python3 python3-venv python3-pip docker.io docker-compose-v2 docker-buildx zsh tree-sitter-cli >/dev/null",
+  "useradd -m -s /bin/bash -u 501 dev && usermod -aG docker dev && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev",   # 501 = id -u on your Mac
+  "git config --system --add safe.directory '*'",
+  "runuser -l dev -c 'curl -fsSL https://claude.ai/install.sh | bash'",
+  "runuser -l dev -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'",
+  "echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> /home/dev/.bashrc",   # what Claude's installer expects
+  "runuser -l dev -c 'mkdir -p ~/.claude && echo @/opt/smv/CLAUDE.md > ~/.claude/CLAUDE.md'",
+
+  "runuser -l dev -c 'mkdir -p ~/.gradle && echo org.gradle.daemon.idletimeout=900000 >> ~/.gradle/gradle.properties'",
+
+  # What the first Claude start and the first smv sh would install (gh, Neovim, oh-my-zsh, nvim
+  # plugins), done now so they start at once. Both still re-run these, so a failure here only
+  # moves the install back to them.
+  "runuser -l dev -c 'for f in /opt/smv/setup.d/*.sh; do sh \"$f\"; done; sh /opt/smv/shell-setup' || true",
+]
+
+[network]
+block_private = true                 # internet open; LAN, VPN ranges and the Mac's own ports closed
+# bin/smv starts every machine with all of its TCP going through the egress proxy (egress.py).

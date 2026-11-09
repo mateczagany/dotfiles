@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stand-in for macOS pbpaste: the last text pbcopy or nvim copied in this machine.
+cat "$HOME/.cache/smv-clipboard" 2>/dev/null || true

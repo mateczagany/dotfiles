@@ -29,7 +29,7 @@ if ! tmux has-session -t "=$name" 2>/dev/null; then
     tmux new-session -ds "$name" -c "$selected"
     # Claude in the repo's machine, in a second window (git repos only)
     if git -C "$selected" rev-parse --git-dir >/dev/null 2>&1; then
-        tmux new-window -d -t "=$name:" -n claude -c "$selected" "$HOME/dev/repos/dotfiles/scripts/smv claude"
+        tmux new-window -d -t "=$name:" -n claude -c "$selected" "$HOME/.config/smv/bin/smv claude"
     fi
 fi
 

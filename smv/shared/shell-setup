@@ -1,0 +1,71 @@
+#!/bin/sh
+# Runs inside the machine as dev before every smv sh: installs zsh, oh-my-zsh and Neovim
+# and points them at your dotfiles. The first run takes a minute or two, later ones nothing.
+set -e
+dotfiles=$HOME/dev/repos/dotfiles   # linked to the Mac's copy by setup.d/home-links.sh
+if [ ! -f "$dotfiles/.zshrc" ]; then
+  echo "shell-setup: $dotfiles/.zshrc is missing; is ~/dev/repos/dotfiles in ro-mounts?" >&2
+  exit 1
+fi
+
+link() {  # SOURCE TARGET, like install.sh: never replaces a real file
+  if [ -e "$2" ] && [ ! -L "$2" ]; then
+    echo "shell-setup: skip $2 (a real file is there)" >&2; return
+  fi
+  [ "$(readlink "$2")" = "$1" ] || ln -sfn "$1" "$2"
+}
+
+# zsh, and the tree-sitter CLI nvim-treesitter builds its parsers with
+if ! command -v zsh >/dev/null || ! command -v tree-sitter >/dev/null; then
+  echo "shell-setup: installing zsh and tree-sitter" >&2
+  sudo env DEBIAN_FRONTEND=noninteractive sh -c \
+    'apt-get update -qq && apt-get install -yqq zsh tree-sitter-cli >/dev/null'
+fi
+
+# Neovim from GitHub: your config needs 0.12, Ubuntu has 0.11. rm -rf ~/.local/nvim to update.
+mkdir -p "$HOME/.local/bin"
+if [ ! -x "$HOME/.local/nvim/bin/nvim" ]; then
+  echo "shell-setup: installing Neovim" >&2
+  arch=$(uname -m); [ "$arch" = aarch64 ] && arch=arm64
+  tmp=$(mktemp -d)
+  curl -fsSL "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-$arch.tar.gz" \
+    | tar -xz -C "$tmp"
+  rm -rf "$HOME/.local/nvim"
+  mv "$tmp/nvim-linux-$arch" "$HOME/.local/nvim"
+  rmdir "$tmp"
+fi
+link "$HOME/.local/nvim/bin/nvim" "$HOME/.local/bin/nvim"
+
+# oh-my-zsh with the theme and plugins your .zshrc loads; add a line here when you add one there
+clone() {  # GITHUB_REPO DIR
+  [ -d "$2" ] && return
+  echo "shell-setup: cloning $1" >&2
+  git clone -q --depth=1 "https://github.com/$1.git" "$2"
+}
+omz=$HOME/.oh-my-zsh
+clone ohmyzsh/ohmyzsh "$omz"
+clone romkatv/powerlevel10k "$omz/custom/themes/powerlevel10k"
+clone zsh-users/zsh-autosuggestions "$omz/custom/plugins/zsh-autosuggestions"
+clone zsh-users/zsh-syntax-highlighting "$omz/custom/plugins/zsh-syntax-highlighting"
+clone jeffreytse/zsh-vi-mode "$omz/custom/plugins/zsh-vi-mode"
+if [ ! -d "$HOME/.cache/gitstatus" ]; then   # p10k's git status daemon, else it fetches at the first prompt
+  "$omz/custom/themes/powerlevel10k/gitstatus/install" || echo "shell-setup: could not fetch gitstatusd" >&2
+fi
+
+# Your configs. ~/.zshrc is a wrapper that sources the dotfiles one (see /opt/smv/zshrc).
+link /opt/smv/zshrc "$HOME/.zshrc"
+if [ -f "$dotfiles/.p10k.zsh" ]; then link "$dotfiles/.p10k.zsh" "$HOME/.p10k.zsh"; fi
+mkdir -p "$HOME/.config" "$HOME/.vim/undodir"   # undodir: set in nvim/lua/config/options.lua
+link "$dotfiles/nvim" "$HOME/.config/nvim"
+site=$HOME/.local/share/nvim/site
+mkdir -p "$site/plugin"
+link /opt/smv/nvim-clipboard.lua "$site/plugin/smv-clipboard.lua"
+for f in /opt/smv/bin/*; do
+  if [ -f "$f" ]; then link "$f" "$HOME/.local/bin/${f##*/}"; fi
+done
+
+# Plugins and treesitter parsers, so the first nvim you open doesn't stop to install them
+if [ ! -d "$site/pack/core/opt" ]; then
+  echo "shell-setup: installing Neovim plugins and parsers" >&2
+  (cd "$HOME" && nvim --headless +qa >/dev/null 2>&1) || echo "shell-setup: nvim reported errors; run nvim to see them" >&2
+fi

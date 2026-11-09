@@ -1,0 +1,23 @@
+# ~/.zshrc in every smv machine (linked by shell-setup). Loads the .zshrc from your
+# dotfiles, with stand-ins for the macOS-only commands it calls while loading.
+
+# Neither exists here: JAVA_HOME stays the machine's, and there are no smolvm completions.
+/usr/libexec/java_home() { print -r -- $JAVA_HOME }
+smolvm() { }
+
+# No p10k config in the dotfiles: use p10k's defaults instead of running its wizard.
+[[ -f ~/.p10k.zsh ]] || POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true
+
+source ~/dev/repos/dotfiles/.zshrc
+
+unfunction /usr/libexec/java_home smolvm
+
+# The machine's name (cc-<repo>, its hostname) in yellow at the start of the prompt, so this
+# shell doesn't look like the Mac's. .p10k.zsh shows user@host only for root and over SSH.
+# p10k reads these at the first prompt, so setting them after .p10k.zsh is enough.
+unset POWERLEVEL9K_CONTEXT_{DEFAULT,SUDO}_CONTENT_EXPANSION
+typeset -g POWERLEVEL9K_CONTEXT_TEMPLATE='%F{3}%m%f'
+
+# Mac tools the .zshrc points git and gcc at
+(( $+commands[difft] )) || unset GIT_EXTERNAL_DIFF
+(( $+commands[gcc-13] )) || unalias gcc 2>/dev/null
