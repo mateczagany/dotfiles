@@ -40,6 +40,5 @@ done
 
 # Opus at xhigh effort unless already set; /model and /effort still change a session.
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-opus}"
-export CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-xhigh}"
 
 exec claude --dangerously-skip-permissions "$@"

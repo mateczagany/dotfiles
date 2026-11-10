@@ -17,9 +17,6 @@ entrypoint = ["/bin/sh", "-c"]
 cmd = ["while true; do if command -v dockerd >/dev/null && ! pgrep -x dockerd >/dev/null; then rm -f /var/run/docker.pid; dockerd --group dev >>/var/log/dockerd.log 2>&1 & fi; sleep 5; done"]
 
 init = [
-  # The egress proxy's CA (bin/smv mounts it here) for what ignores SSL_CERT_FILE: sudo, apt, Java.
-  "cp /etc/smolvm-host-trust/ca-bundle.pem /usr/local/share/ca-certificates/smv-egress.crt && update-ca-certificates >/dev/null 2>&1 && keytool -importcert -noprompt -cacerts -storepass changeit -alias smv-egress -file /usr/local/share/ca-certificates/smv-egress.crt >/dev/null 2>&1",
-  "ln -sf /opt/smv/docker-runc /usr/local/sbin/runc",   # and Docker's containers, ahead of the real runc on dockerd's PATH
   "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -yqq git curl zip unzip ca-certificates openssh-client ripgrep jq less procps sqlite3 sudo maven openjdk-17-jdk-headless python3 python3-venv python3-pip docker.io docker-compose-v2 docker-buildx zsh tree-sitter-cli >/dev/null",
   # DuckDB's CLI, for Parquet files (not in apt). Parquet and JSON support are built in.
   "curl -fsSL https://github.com/duckdb/duckdb/releases/latest/download/duckdb-cli-linux-$(dpkg --print-architecture).tar.gz | tar -xz -C /usr/local/bin duckdb",
@@ -40,4 +37,3 @@ init = [
 
 [network]
 block_private = true                 # internet open; LAN, VPN ranges and the Mac's own ports closed
-# bin/smv starts every machine with all of its TCP going through the egress proxy (egress.py).

@@ -1,6 +1,6 @@
 # smv: Claude Code in one smolvm machine per repo
 
-Each git repo gets its own small Linux VM (a [smolvm](https://github.com/smol-machines/smolvm) machine named `cc-<repo>`), and Claude Code runs inside it with `--dangerously-skip-permissions`. The machine sees only its repo, a few shared folders and the internet. Your LAN, VPN and the Mac's own ports stay out of reach. Everything a machine sends goes through a proxy on the Mac that logs each request and refuses the ones that carry your personal information.
+Each git repo gets its own small Linux VM (a [smolvm](https://github.com/smol-machines/smolvm) machine named `cc-<repo>`), and Claude Code runs inside it with `--dangerously-skip-permissions`. The machine sees only its repo, a few shared folders and the internet. Your LAN, VPN and the Mac's own ports stay out of reach.
 
 Repos and worktrees are mounted at the same path they have on the Mac, so every path Claude prints also opens on the Mac.
 
@@ -8,7 +8,7 @@ Repos and worktrees are mounted at the same path they have on the Mac, so every 
 
 - An Apple Silicon Mac
 - smolvm 1.34 or later: `brew install smol-machines/tap/smolvm`
-- `brew install jq fzf bat mitmproxy`
+- `brew install jq fzf bat`
 - tmux, with `~/.local/bin` on the PATH tmux starts with
 - A Claude Pro or Max plan, or an API key
 
@@ -23,12 +23,12 @@ This links this folder to `~/.config/smv` and each script in `bin/` into `~/.loc
 Then, once per Mac:
 
 ```bash
-# Claude token (one year), stored in Keychain; the egress proxy adds it to requests to Anthropic
+# Claude token (one year), stored in Keychain; smv passes it to the machines as CLAUDE_CODE_OAUTH_TOKEN
 claude setup-token
 security add-generic-password -U -a "$USER" -s claude-code-oauth -w
 
 # Optional: a read-only, fine-grained GitHub token for gh and git fetch in the machines,
-# also added by the egress proxy
+# passed as GH_TOKEN
 # (Contents, Pull requests, Issues: Read; limited to the repos you need)
 security add-generic-password -U -a "$USER" -s github-readonly -w
 
@@ -46,8 +46,7 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 | Path | What it does |
 | --- | --- |
 | `install.sh` | Links this folder and `bin/` into place; adds the memory guard hook to `~/.claude/settings.json` |
-| `bin/smv` | Creates, starts and enters machines; adds missing mounts; starts the egress proxy |
-| `egress.py` | The egress proxy: a mitmproxy addon that is also smolvm's egress decider |
+| `bin/smv` | Creates, starts and enters machines; adds missing mounts; passes the tokens in |
 | `Smolfile` | The machine definition: image, CPUs, memory, network, first-start setup |
 | `ro-mounts` | Mac folders machines see read-only, one per line (`~/…` works); a `[PATH]` line limits the next ones to repos inside PATH (see [Mount lists](#mount-lists)) |
 | `rw-mounts` | Same, read-write |
@@ -58,14 +57,13 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 | `shared/CLAUDE.md` | Rules for Claude in the machines: environment, Docker |
 | `shared/CLAUDE.global.md` | Your global instructions, used on the Mac and in every machine |
 | `shared/gitignore` | Global git ignores: `.worktrees/` |
-| `shared/docker-runc` | Docker's runc in the machines: gives each container the egress proxy's CA |
 | `shared/setup.d/*.sh` | Your setup steps, run as `dev` at a machine's first start, then before every Claude start and every `smv sh` |
 | `shared/shell-start` | What `smv sh` runs: `setup.d/`, then `shell-setup`, then zsh (bash if zsh isn't there) |
 | `shared/shell-setup` | Installs zsh, oh-my-zsh and Neovim in a machine and links your `.zshrc` and `nvim/` from this repo |
 | `shared/zshrc` | `~/.zshrc` in the machines: sources this repo's `.zshrc`, with stand-ins for the macOS commands it calls |
 | `shared/bin/`, `shared/nvim-clipboard.lua` | `pbcopy` and `pbpaste` for the machines, and nvim's clipboard there (see below) |
 
-Not in this folder, on purpose: Keychain items, the egress proxy's files in `~/.local/state/smv`, each repo's `.git/info/exclude`, and anything inside the machines.
+Not in this folder, on purpose: Keychain items, each repo's `.git/info/exclude`, and anything inside the machines.
 
 ## Daily use
 
@@ -79,8 +77,6 @@ smv stop [DIR]            # stop this repo's machine
 smv rm [DIR]              # delete it, with its disk
 smv ls                    # all machines
 smv stop-all              # stop every cc-* machine
-smv log [N]               # follow what the machines send, starting N lines back
-smv proxy                 # restart the egress proxy
 ```
 
 `DIR` defaults to the current folder and can be any worktree. The first `smv` call in a repo creates its machine; the first start installs everything and takes a few minutes.
@@ -118,8 +114,8 @@ A mount alone doesn't make Claude look there. Claude reads a `CLAUDE.md` in ever
 
 - User `dev` with your Mac's uid (501) and passwordless sudo. `/home/dev` lives on the machine's disk and survives stops; `/tmp` does not.
 - Temurin 21, Maven, Python 3.14 with `uv`, `sqlite3`, `duckdb` (the latest CLI from GitHub, for Parquet), Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
-- Network: HTTP and HTTPS to the internet, through the egress proxy; LAN, VPN ranges and the Mac's own ports closed (`block_private`). Other TCP (SSH, databases on the internet) and UDP other than DNS are blocked.
-- `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold placeholders, not the tokens.
+- Network: the internet is open; LAN, VPN ranges and the Mac's own ports are closed (`block_private`).
+- `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold the tokens from Keychain. `smv` reads both each time it starts Claude or a shell in a machine, so nothing in the machine stores them.
 - Mounts: the repo at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus the folders in `ro-mounts`, `rw-mounts` and their `.local` versions that apply to this repo, at their Mac paths.
 - A SQLite database in WAL mode won't open from a read-only mount the usual way: SQLite needs to create its `-shm` file next to it. `sqlite3 'file:PATH?immutable=1'` works, and `shared/CLAUDE.md` tells Claude so. It reads only the main file, so writes a Mac program still holds in the `-wal` file don't show up until that program checkpoints or closes the database.
 - `smv sh` opens zsh with this repo's `.zshrc` and nvim with its `nvim/` config, both read from the `~/dev/repos/dotfiles` mount, so an edit on the Mac shows up at the next shell or nvim start. A machine's first start runs `shell-setup`, which installs oh-my-zsh with the theme and plugins the `.zshrc` loads, Neovim from GitHub (the config needs 0.12, Ubuntu has 0.11), and nvim's plugins and treesitter parsers. Every `smv sh` runs it again, so whatever failed at the first start gets installed then.
@@ -147,39 +143,6 @@ Claude adds a hash to keys over 200 characters, which `smv` doesn't compute, so 
 
 What a machine can do with the folder: write memories that Claude on the Mac reads at its next start in that repo, delete them, or plant a symlink. Claude follows symlinks, so a `MEMORY.md` linked to `~/.ssh/id_ed25519` would load the key into a Mac session. The memory guard, a `SessionStart` hook that `install.sh` adds to `~/.claude/settings.json` on the Mac, deletes symlinks and other non-regular files from every memory folder before Claude reads them, and shows a warning naming what it deleted. It runs only when a session starts, so a link planted during a Mac session can still reach a topic file that session reads later. Write access to the repo already gives a machine as much: a symlinked `CLAUDE.local.md` loads the same way, and `.git/config` and `.git/hooks` can run commands on the Mac at your next `git status` or commit there.
 
-## Egress proxy
-
-`smv` starts every machine with smolvm's [mediated egress](https://github.com/smol-machines/smolvm/blob/main/docs/mediated-egress.md): smolvm hands each outbound TCP connection to `egress.py`, which runs in `mitmdump` on the Mac (smolvm talks to it on 127.0.0.1:47130, mitmproxy listens on 47131). Opening a machine starts the proxy in the background if it isn't running, and `smv proxy` restarts it. While it's down, every connection from the machines is refused.
-
-The proxy decrypts HTTPS with its own CA. Machines that `smv` creates trust it: `--trust-host-certs` points `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS` and the like at it, and the first start adds it to the system store and Java's keystore. For each request the proxy:
-
-- writes a line to `~/.local/state/smv/egress.log` with the time, machine, method, URL, status, bytes sent and, for a refused one, the reason. Bodies aren't logged. `smv log` follows the file.
-- answers 403 itself, without sending anything, if the URL, a header or the body contains a line of `~/.local/state/smv/personal`. Requests to Anthropic (`anthropic.com`, `claude.ai`, `claude.com` and their subdomains) skip this check: they carry the whole conversation, which holds your name and email as soon as Claude reads a `git log`, and blocking them would end the session.
-- puts the real Claude or GitHub token, read from Keychain when the proxy starts, in place of the placeholder the machine sent. That happens only in the `Authorization` header, and only on connections where mitmproxy verified the server's certificate for an Anthropic or GitHub host name.
-
-Connections that aren't HTTP (SSH, a database protocol) are closed before a byte crosses in either direction, and logged as `not HTTP`.
-
-The first start creates `personal` from your global git `user.email` and `user.name`. Add anything else you want kept in, one per line: phone numbers, your address, other email addresses. Matching ignores case and also looks in URL-encoded, JSON-escaped and base64 text. A space in a line matches any run of spaces, `+`, `_`, `.` or `-`, so `Jane Doe` also catches `jane.doe`. A line starting with `re:` is a regular expression. The proxy re-reads the file when it changes.
-
-What it doesn't stop:
-
-- A model trying to leak on purpose: the email spelled backwards, split across two requests, or encoded some other way. The check catches your email pasted into a curl, a WebFetch or a GitHub comment.
-- DNS: lookups go through smolvm's resolver, not the proxy, so a name like `<data>.example.com` hands the data to that domain's name server.
-- Claude's server-side tools, such as web search, which run at Anthropic after the request has left.
-
-Docker containers have their own trust stores, so `shared/docker-runc` adds the CA to each one. The Smolfile links it to `/usr/local/sbin/runc`, ahead of the real runc on dockerd's `PATH`, and dockerd uses it for `docker run`, compose, Testcontainers and `docker build` steps. Before a container starts, it:
-
-- mounts the machine's CA bundle at `/dev/smv-egress-ca.pem` and points `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `PIP_CERT`, `GIT_SSL_CAINFO` and three more at it, in the container and in `docker exec`. If the image pointed one of them at its own bundle, that bundle is added to the container's copy. Nothing lands in a built image: `/dev` is a fresh tmpfs in every container, and the variables aren't saved in the image config.
-- mounts the machine's Java keystore, read-only, over the image's, when the image sets `JAVA_HOME`. It follows symlinks inside the image, so Corretto's and UBI's keystores under `/etc/pki` work too.
-
-That covers curl, apk, pip, Python, Node and Java 8 to 21 in containers. What still fails:
-
-- A `keytool -importcert` in a container or a `RUN` step: "Read-only file system". On RHEL-family images `update-ca-trust` prints "couldn't complete writing file" for the keystore but exits 0.
-- Programs that ignore those variables and read the image's own CA file, such as apt over HTTPS. Debian and Ubuntu images use HTTP mirrors by default.
-- `sudo` inside a container, which clears the variables.
-
-Keep `~/.local/state/smv` out of `ro-mounts` and `rw-mounts`: it holds the CA's private key and the token smolvm presents to the proxy. If you delete its `mitmproxy/` folder, the proxy makes a new CA and every machine needs a rebuild.
-
 ## Changing things
 
 | You edit | Takes effect |
@@ -188,18 +151,16 @@ Keep `~/.local/state/smv` out of `ro-mounts` and `rw-mounts`: it holds the CA's 
 | `shared/` shell files, this repo's `.zshrc` and `nvim/` | Next `smv sh` (or nvim start), in every machine. To update Neovim in one: `rm -rf ~/.local/nvim` in it, then `smv sh` |
 | `ro-mounts`, `rw-mounts` and their `.local` versions | Next time `smv` opens a machine: attached right away if it's running, added for good at its next start from stopped. A folder that holds the repo or another mount is added only from stopped: `smv stop`, then open it |
 | `bin/` | Immediately |
-| `egress.py`, `~/.local/state/smv/personal` | Immediately: the proxy reloads both when they change |
-| `shared/docker-runc` | The next container started, in machines made since it was added |
-| A token in Keychain | `smv proxy` |
+| A token in Keychain | Next `smv claude`, `smv sh` or `smv root`; a Claude that is already running keeps the old one |
 | `Smolfile`, `repos/*.init` | New machines only. To rebuild one: `smv rm && smv up`, which loses its Claude history, caches and Docker images (its memory is on the Mac and stays) |
 | The memory guard in `install.sh` | Run `install.sh` again: it replaces the hook it added before |
 | CPUs or memory of one machine | `smv stop`, then `smolvm machine update --name cc-<repo> --cpus 8 --mem 16384` |
 
-Claude working in this repo's own machine (`cc-dotfiles`) edits the live files every machine runs, and changes apply before you commit. That includes `egress.py`, so it can turn off its own filter. Check `git diff` after such a session.
+Claude working in this repo's own machine (`cc-dotfiles`) edits the live files every machine runs, and changes apply before you commit. Check `git diff` after such a session.
 
 ## Security notes
 
-- The Claude and GitHub tokens stay on the Mac. Machines hold placeholders, and the egress proxy puts the tokens in on verified connections to Anthropic and GitHub, so the agent can use them there but can't read them. Keep the GitHub token read-only and limited to the repos it needs.
+- The Claude and GitHub tokens are in the environment of Claude and of every shell `smv` opens in a machine. The agent can read them and send them anywhere on the internet. Keep the GitHub token read-only and limited to the repos it needs.
 - The machines have no SSH keys; you push from the Mac.
 - Credentials for private Maven or Gradle repositories, if needed, live inside the machine where the agent can read them.
 - Each machine can write its repo's Claude memory folder on the Mac, which Claude on the Mac reads. See [Claude memory](#claude-memory) for what the memory guard catches and what it doesn't.
@@ -210,11 +171,7 @@ Claude working in this repo's own machine (`cc-dotfiles`) edits the live files e
 | --- | --- |
 | Start fails with "agent did not become ready" | A mount folder is gone (a repo renamed, the `~/.config/smv` link removed). Restore it, or `smolvm machine delete --name cc-<old> --force` |
 | `smv`: "is outside … so the machine can't see it" | Move the worktree under `.worktrees/` |
-| Claude asks to log in, or 401 | The token expired: `claude setup-token`, store it again with `security add-generic-password -U …`, then `smv proxy` |
-| `smv`: "… predates the egress proxy" | The machine was made before the proxy and doesn't trust its CA: `smv rm && smv up`, which loses its Claude history, caches and Docker images |
-| `smv`: "the egress proxy did not start" | `tail ~/.local/state/smv/proxy.out`. If another program holds port 47130 or 47131, pick other ports with `SMV_EGRESS_PORT`, after `smv stop-all` |
-| Every request from the machines fails | The proxy stopped: `smv proxy`. `smv log` shows whether requests reach it |
-| A 403 "Blocked by the smv egress proxy" | `smv log` names the line of `~/.local/state/smv/personal` that matched |
+| Claude asks to log in, or 401 | The token expired: `claude setup-token`, store it again with `security add-generic-password -U …`, then start Claude again |
 | A skill or `~/…` import is missing in a machine | Add its folder to `ro-mounts`; check with `ls -l ~/dev/…` in `smv sh` after a Claude start |
 | `sqlite3`: "unable to open database file" for a database in a read-only mount | It's in WAL mode; open it as `sqlite3 'file:PATH?immutable=1'` (see [Inside a machine](#inside-a-machine)) |
 | `smv: adding mount …` on every open | smolvm changed its `machine ls -v` output, which `smv` reads |

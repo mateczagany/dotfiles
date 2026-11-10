@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
 # smv: one smolvm machine per git repo, Claude Code inside it.
-# usage: smv claude|sh|root|up|stop|rm|state [DIR] [ARGS] · smv ls · smv stop-all · smv log [N] · smv proxy
+# usage: smv claude|sh|root|up|stop|rm|state [DIR] [ARGS] · smv ls · smv stop-all
 set -euo pipefail
 
 CFG="${SMV_CONFIG:-$HOME/.config/smv}"
 TOKEN_ITEM="${SMV_TOKEN_ITEM:-claude-code-oauth}"   # Keychain item holding the token
 GH_ITEM="${SMV_GH_ITEM:-github-readonly}"           # optional: read-only GitHub token
-STATE="${SMV_STATE:-$HOME/.local/state/smv}"        # the egress proxy's CA key, token, log and personal list
-EGRESS_PORT="${SMV_EGRESS_PORT:-47130}"             # its decider; mitmproxy listens on the next port
-# What the machines hold instead of the tokens; the egress proxy swaps in the real ones.
-CLAUDE_PLACEHOLDER=sk-ant-oat01-smv-claude-placeholder-the-egress-proxy-adds-the-real-token
-GH_PLACEHOLDER=smv-github-placeholder-the-egress-proxy-adds-the-real-token
 
 die() { printf 'smv: %s\n' "$*" >&2; exit 1; }
 
@@ -38,60 +33,6 @@ lock() {
   trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 }
 unlock() { rmdir "$LOCK" 2>/dev/null || true; trap - EXIT; }
-
-# The egress proxy: egress.py in mitmdump, on the Mac. Every machine's outbound
-# TCP goes through it, and a machine can't start or reach anything without it.
-proxy_running() { nc -z 127.0.0.1 "$EGRESS_PORT" >/dev/null 2>&1; }
-
-proxy_up() {
-  proxy_running && return 0
-  command -v mitmdump >/dev/null || die "the egress proxy needs mitmproxy: brew install mitmproxy"
-  lock egress-proxy
-  if ! proxy_running; then
-    mkdir -p "$STATE/machines"; chmod 700 "$STATE"
-    [ -s "$STATE/token" ] || (umask 077; od -An -tx1 -N32 /dev/urandom | tr -d ' \n' > "$STATE/token")
-    if [ ! -e "$STATE/personal" ]; then
-      { echo "# Text no request from a machine may contain, one per line (see README.md)"
-        git config --global user.email || true
-        git config --global user.name || true
-      } > "$STATE/personal"
-    fi
-    echo "smv: starting the egress proxy; smv log shows what goes out" >&2
-    # set -m: its own process group, so a Ctrl-C in this terminal doesn't stop it
-    set -m
-    SMV_STATE="$STATE" SMV_EGRESS_PORT="$EGRESS_PORT" SMV_TOKEN_ITEM="$TOKEN_ITEM" SMV_GH_ITEM="$GH_ITEM" \
-    SMV_CLAUDE_PLACEHOLDER="$CLAUDE_PLACEHOLDER" SMV_GH_PLACEHOLDER="$GH_PLACEHOLDER" PYTHONDONTWRITEBYTECODE=1 \
-      nohup mitmdump --listen-host 127.0.0.1 --listen-port $((EGRESS_PORT + 1)) \
-        --set confdir="$STATE/mitmproxy" --set flow_detail=0 --set termlog_verbosity=warn \
-        -s "$CFG/egress.py" >>"$STATE/proxy.out" 2>&1 </dev/null &
-    echo $! > "$STATE/proxy.pid"
-    set +m
-    for _ in $(seq 1 100); do proxy_running && break; sleep 0.1; done
-  fi
-  unlock
-  proxy_running || die "the egress proxy did not start; see $STATE/proxy.out"
-}
-
-proxy_stop() {
-  local pid
-  pid=$(cat "$STATE/proxy.pid" 2>/dev/null) || return 0
-  case "$(ps -p "$pid" -o command= 2>/dev/null)" in *mitmdump*) kill "$pid" ;; esac
-  for _ in $(seq 1 50); do proxy_running || break; sleep 0.1; done
-  rm -f "$STATE/proxy.pid"
-}
-
-# Start NAME with each outbound TCP flow handed to the egress proxy, and note
-# the mediation ID smolvm gave this launch so the proxy's log can name it.
-start() {  # NAME
-  local out id
-  out=$(mktemp "$STATE/start.XXXXXX")
-  if ! SMOLVM_INTERCEPTOR_TOKEN=$(cat "$STATE/token") smolvm machine start --name "$1" \
-      --egress-interceptor "127.0.0.1:$EGRESS_PORT" --mediated-egress | tee "$out" >&2; then
-    rm -f "$out"; return 1
-  fi
-  id=$(sed -n 's/^Mediation machine ID: //p' "$out"); rm -f "$out"
-  [ -z "$id" ] || printf '%s\n' "$1" > "$STATE/machines/$id"
-}
 
 # This repo's Claude memory folder on the Mac. Claude names it after the main
 # checkout's path with every character but A-Z, a-z and 0-9 turned into "-". Past
@@ -205,13 +146,8 @@ create() {  # ROOT NAME
     done < "$CFG/repos/$name.init"
   fi
   while IFS= read -r m; do extra+=(-v "$m"); done < <(wanted "$root")
-  # --trust-host-certs with this bundle: the image pull and everything that reads
-  # SSL_CERT_FILE and the like trust the egress proxy's CA (the Smolfile adds it
-  # to the system store and Java's keystore).
-  SMOLVM_HOST_CA_BUNDLE="$STATE/mitmproxy/mitmproxy-ca-cert.pem" \
   smolvm machine create --name "$name" -s "$CFG/Smolfile" \
     -v "$root:$root" \
-    --trust-host-certs \
     --init "git config --system user.name \"$(git -C "$root" config user.name)\"" \
     --init "git config --system user.email \"$(git -C "$root" config user.email)\"" \
     ${extra[@]+"${extra[@]}"}
@@ -222,7 +158,6 @@ up() {  # DIR -> prints the machine name once it answers
   root=$(repo_root "$1"); name=$(machine_name "$root")
   mem=$(memory_dir "$root")
   mkdir -p "$HOME/.claude/skills" ${mem:+"$mem"}   # mount sources must exist
-  proxy_up
   lock "$name"
   # in_vm calls this as $(up ...), where bash ignores set -e, so check each step.
   if [ -z "$(state "$name")" ]; then
@@ -234,24 +169,19 @@ up() {  # DIR -> prints the machine name once it answers
   fi
   if [ "$(state "$name")" != running ]; then
     echo "smv: starting $name (a new machine's first start installs everything, a few minutes)" >&2
-    start "$name" || die "could not start $name; see: smolvm machine logs --name $name"
+    smolvm machine start --name "$name" >&2 \
+      || die "could not start $name; see: smolvm machine logs --name $name"
   fi
   unlock
-  # A machine made before the egress proxy lacks its CA, and if it was already
-  # running, its traffic doesn't go through the proxy at all.
   for _ in $(seq 1 120); do
-    case "$(smolvm machine exec --name "$name" -- sh -c \
-        'if [ -s /etc/smolvm-host-trust/ca-bundle.pem ]; then echo READY; else echo OLD; fi' 2>/dev/null | tr -d '\r')" in
-      READY) echo "$name"; return 0 ;;
-      OLD) die "$name predates the egress proxy; rebuild it (this loses its Claude history and caches): smv rm $1 && smv up $1" ;;
-    esac
+    if smolvm machine exec --name "$name" -- true >/dev/null 2>&1; then echo "$name"; return 0; fi
     sleep 1
   done
   die "$name did not answer; see: smolvm machine logs --name $name"
 }
 
 in_vm() {  # DIR USER LABEL CMD...
-  local dir user=$2 label=$3 root name rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
+  local dir user=$2 label=$3 root name tok rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
   local -a restore
   dir=$(cd "$1" && pwd -P); shift 3
   root=$(repo_root "$dir")
@@ -260,9 +190,14 @@ in_vm() {  # DIR USER LABEL CMD...
     *) die "$dir is outside $root, so the machine can't see it (git worktree move it under the repo)" ;;
   esac
   name=$(up "$dir")
-  env+=(-e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_PLACEHOLDER")
-  if security find-generic-password -s "$GH_ITEM" >/dev/null 2>&1; then
-    env+=(-e "GH_TOKEN=$GH_PLACEHOLDER")            # gh and git over HTTPS in the machine
+  # The tokens from Keychain, for Claude, gh and git over HTTPS in the machine.
+  # --secret-env has smolvm read them from this environment, which keeps them
+  # off its command line.
+  if tok=$(security find-generic-password -s "$TOKEN_ITEM" -w 2>/dev/null) && [ -n "$tok" ]; then
+    export CLAUDE_CODE_OAUTH_TOKEN="$tok"; env+=(--secret-env CLAUDE_CODE_OAUTH_TOKEN=CLAUDE_CODE_OAUTH_TOKEN)
+  fi
+  if tok=$(security find-generic-password -s "$GH_ITEM" -w 2>/dev/null) && [ -n "$tok" ]; then
+    export GH_TOKEN="$tok"; env+=(--secret-env GH_TOKEN=GH_TOKEN)
   fi
   set -- smolvm machine exec --name "$name" -it -u "$user" -w "$dir" "${env[@]}" -- "$@"
 
@@ -306,10 +241,5 @@ case "$cmd" in
   stop-all) smolvm machine ls --json \
               | jq -r '.[] | select(.name | startswith("cc-")) | select(.state == "running") | .name' \
               | while read -r n; do smolvm machine stop --name "$n"; done ;;
-  log)      [ -s "$STATE/egress.log" ] || die "nothing logged yet in $STATE/egress.log"
-            tail -n "${1:-40}" -F "$STATE/egress.log" | jq -r --unbuffered '
-              [.ts[11:], .vm // "-", .verdict, .method // "-", (.status // "-" | tostring),
-               .url // .dest, .reason // ""] | @tsv' ;;
-  proxy)    proxy_stop; proxy_up ;;             # restart it, e.g. to read a renewed token
   *)        sed -n '2,3p' "$0" ;;
 esac
