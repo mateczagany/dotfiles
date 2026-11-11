@@ -1,0 +1,34 @@
+#!/bin/sh
+# gh in the machines, ahead of /usr/bin/gh on PATH (setup.d/github.sh links it).
+#
+# smv passes one GitHub token per owner: GH_TOKEN_OWNER for each Keychain item
+# github-readonly-OWNER on the Mac, and GH_TOKEN from github-readonly for
+# everything else. gh reads only GH_TOKEN, so this sets it to the token of the
+# first owner named in the arguments, or else in this repo's remotes, and runs
+# the real gh.
+#
+# It is also git's credential helper (gh auth git-credential). There it goes by
+# the path of the repo git asks about.
+
+# The token of the first owner in the arguments that has its own, or nothing.
+# Each argument is split at "/" and ":", so URLs and OWNER/REPO both work.
+token_for() {
+  for c in $(printf '%s\n' "$@" | tr '/:' '\n\n' | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g'); do
+    eval "t=\${GH_TOKEN_$c:-}"
+    if [ -n "$t" ]; then printf '%s\n' "$t"; return; fi
+  done
+}
+
+if [ "${1:-} ${2:-}" = "auth git-credential" ]; then
+  asked=$(cat)
+  t=$(token_for "$(printf '%s\n' "$asked" | sed -n 's/^path=//p')")
+  [ -z "$t" ] || export GH_TOKEN="$t"
+  printf '%s\n' "$asked" | /usr/bin/gh "$@"
+  exit
+fi
+
+t=$(token_for "$@")
+# shellcheck disable=SC2046  # one argument per remote URL
+[ -n "$t" ] || t=$(token_for $(git config --get-regexp '^remote\..*\.url$' 2>/dev/null | cut -d' ' -f2))
+[ -z "$t" ] || export GH_TOKEN="$t"
+exec /usr/bin/gh "$@"

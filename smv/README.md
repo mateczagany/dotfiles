@@ -32,6 +32,10 @@ security add-generic-password -U -a "$USER" -s claude-code-oauth -w
 # (Contents, Pull requests, Issues: Read; limited to the repos you need)
 security add-generic-password -U -a "$USER" -s github-readonly -w
 
+# Optional: one more per organization, since a fine-grained token covers a single owner.
+# The item's name ends in the owner's name; case doesn't matter.
+security add-generic-password -U -a "$USER" -s github-readonly-acme -w
+
 # ~/.claude/CLAUDE.md is just this import; your global instructions live in shared/
 echo '@~/.config/smv/shared/CLAUDE.global.md' > ~/.claude/CLAUDE.md
 
@@ -52,17 +56,18 @@ Keep the `~/.config/smv` link for good. Existing machines store the full path of
 | `rw-mounts` | Same, read-write |
 | `ro-mounts.local`, `rw-mounts.local` | Same as the two above, but git-ignored: for paths you'd rather not commit |
 | `machines.local` | Repos that share one machine, and how much memory it gets (see [Machine groups](#machine-groups)). Git-ignored, so it stays on this Mac |
-| `repos/cc-<name>.init` | Extra first-start commands for one machine, one per line, run as root |
+| `repos/cc-<name>.init` | Extra first-start commands for one machine, one per line, run as root. Git-ignored, since the file names say which repos you have |
 | `shared/` | Mounted read-only at `/opt/smv` in every machine |
 | `shared/claude-start` | Runs before every Claude start in a machine (see below) |
 | `shared/CLAUDE.md` | Rules for Claude in the machines: environment, Docker |
 | `shared/CLAUDE.global.md` | Your global instructions, used on the Mac and in every machine |
 | `shared/gitignore` | Global git ignores: `.worktrees/` |
-| `shared/setup.d/*.sh` | Your setup steps, run as `dev` at a machine's first start, then before every Claude start and every `smv sh` |
+| `shared/setup.d/*.sh` | Your setup steps, run as `dev` at a machine's first start, then before every Claude start and every `smv sh`. Ones named `*.local.sh` are git-ignored |
 | `shared/shell-start` | What `smv sh` runs: `setup.d/`, then `shell-setup`, then zsh (bash if zsh isn't there) |
 | `shared/shell-setup` | Installs zsh, oh-my-zsh and Neovim in a machine and links your `.zshrc` and `nvim/` from this repo |
 | `shared/zshrc` | `~/.zshrc` in the machines: sources this repo's `.zshrc`, with stand-ins for the macOS commands it calls |
 | `shared/bin/`, `shared/nvim-clipboard.lua` | `pbcopy` and `pbpaste` for the machines, and nvim's clipboard there (see below) |
+| `shared/bin/gh` | `gh` in the machines, and git's credential helper there: picks the GitHub token by the repo's owner |
 
 Not in this folder, on purpose: Keychain items, each repo's `.git/info/exclude`, and anything inside the machines.
 
@@ -138,7 +143,8 @@ A mount alone doesn't make Claude look there. Claude reads a `CLAUDE.md` in ever
 - User `dev` with your Mac's uid (501) and passwordless sudo. `/home/dev` lives on the machine's disk and survives stops; `/tmp` does not.
 - Temurin 21, Maven, Python 3.14 with `uv`, `sqlite3`, `duckdb` (the latest CLI from GitHub, for Parquet), Docker (daemon inside the machine; `docker`, `docker compose` and Testcontainers work without sudo), `gh` from `setup.d/github.sh`.
 - Network: the internet is open; LAN, VPN ranges and the Mac's own ports are closed (`block_private`).
-- `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold the tokens from Keychain. `smv` reads both each time it starts Claude or a shell in a machine, so nothing in the machine stores them.
+- `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` hold the tokens from Keychain. `smv` reads them each time it starts Claude or a shell in a machine, so nothing in the machine stores them.
+- Each Keychain item named `github-readonly-<owner>` arrives as `GH_TOKEN_<OWNER>`. `gh` in a machine is `shared/bin/gh`, which sets `GH_TOKEN` to the token of the first owner it finds in its arguments (`acme/api`, a URL, `repos/acme/api/pulls`), or else in the remotes of the repo it runs in, and then runs the real `gh`. git asks the same script for credentials and gets the token for the owner in the URL. Without a token of its own, an owner gets `GH_TOKEN`.
 - Mounts: the repo (or its group's folders) at its Mac path, `shared/` at `/opt/smv`, `~/.claude/skills` at `/opt/claude-skills`, the repo's Claude memory folder read-write at its Mac path, plus the folders in `ro-mounts`, `rw-mounts` and their `.local` versions that apply to this repo, at their Mac paths.
 - A SQLite database in WAL mode won't open from a read-only mount the usual way: SQLite needs to create its `-shm` file next to it. `sqlite3 'file:PATH?immutable=1'` works, and `shared/CLAUDE.md` tells Claude so. It reads only the main file, so writes a Mac program still holds in the `-wal` file don't show up until that program checkpoints or closes the database.
 - `smv sh` opens zsh with this repo's `.zshrc` and nvim with its `nvim/` config, both read from the `~/dev/repos/dotfiles` mount, so an edit on the Mac shows up at the next shell or nvim start. A machine's first start runs `shell-setup`, which installs oh-my-zsh with the theme and plugins the `.zshrc` loads, Neovim from GitHub (the config needs 0.12, Ubuntu has 0.11), and nvim's plugins and treesitter parsers. Every `smv sh` runs it again, so whatever failed at the first start gets installed then.
@@ -198,6 +204,7 @@ Claude working in this repo's own machine (`cc-dotfiles`) edits the live files e
 | Start fails with "boot process was killed by SIGABRT" or "boot process exited" | The machine is configured with more mounts than it can boot with (`smolvm machine ls -v` lists them). Lower `SMV_MAX_MOUNTS`, then `smv rm && smv up` |
 | `smv`: "is outside … so the machine can't see it" | Move the worktree under `.worktrees/`, or put both folders in one [machine group](#machine-groups) |
 | Claude asks to log in, or 401 | The token expired: `claude setup-token`, store it again with `security add-generic-password -U …`, then start Claude again |
+| `gh` or git answers 404 or "Repository not found" for a private repo | No token covers its owner: store one as `github-readonly-<owner>` (see [Install](#install)), then start Claude again. With `gh` outside that repo, name it as `OWNER/REPO` so the wrapper can tell which token to use |
 | A skill or `~/…` import is missing in a machine | Add its folder to `ro-mounts`; check with `ls -l ~/dev/…` in `smv sh` after a Claude start |
 | `sqlite3`: "unable to open database file" for a database in a read-only mount | It's in WAL mode; open it as `sqlite3 'file:PATH?immutable=1'` (see [Inside a machine](#inside-a-machine)) |
 | `smv: adding mount …` on every open | smolvm changed its `machine ls -v` output, which `smv` reads |

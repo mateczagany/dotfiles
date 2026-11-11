@@ -2,7 +2,7 @@
 
 The internet is reachable from this machine. The user's LAN, VPN and Mac are not.
 
-There are no SSH keys here: use HTTPS git remotes, not SSH. `gh` and git reach GitHub with `GH_TOKEN`, which is read-only, so the user pushes from their Mac.
+There are no SSH keys here: use HTTPS git remotes, not SSH. `gh` and git reach GitHub with read-only tokens, so the user pushes from their Mac. There is one token per owner: `gh` here is a wrapper (`/opt/smv/bin/gh`) that picks the token of the owner named in its arguments, or else of this repo's remotes. If a private repo answers 404, run the command from that repo or name it as `OWNER/REPO`.
 
 # Read-only folders
 

@@ -1,3 +1,5 @@
 /ro-mounts.local
 /rw-mounts.local
 /machines.local
+/repos/
+/shared/setup.d/*.local.sh

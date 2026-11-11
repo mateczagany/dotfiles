@@ -5,7 +5,7 @@ set -euo pipefail
 
 CFG="${SMV_CONFIG:-$HOME/.config/smv}"
 TOKEN_ITEM="${SMV_TOKEN_ITEM:-claude-code-oauth}"   # Keychain item holding the token
-GH_ITEM="${SMV_GH_ITEM:-github-readonly}"           # optional: read-only GitHub token
+GH_ITEM="${SMV_GH_ITEM:-github-readonly}"           # optional: read-only GitHub token; GH_ITEM-OWNER holds one owner's
 # Mounts a machine is configured with. One with more doesn't start: with this
 # Smolfile, smolvm 1.34 boots with 14 and crashes with 15. Mounts past this
 # number are attached after each start, which has no such limit.
@@ -280,7 +280,7 @@ up() {  # DIR -> prints the machine name once it answers
 }
 
 in_vm() {  # DIR USER LABEL CMD...
-  local dir user=$2 label=$3 root name tok r inside= rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
+  local dir user=$2 label=$3 root name tok item var r inside= rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
   local -a restore
   dir=$(cd "$1" && pwd -P); shift 3
   root=$(repo_root "$dir")
@@ -295,9 +295,16 @@ in_vm() {  # DIR USER LABEL CMD...
   if tok=$(security find-generic-password -s "$TOKEN_ITEM" -w 2>/dev/null) && [ -n "$tok" ]; then
     export CLAUDE_CODE_OAUTH_TOKEN="$tok"; env+=(--secret-env CLAUDE_CODE_OAUTH_TOKEN=CLAUDE_CODE_OAUTH_TOKEN)
   fi
-  if tok=$(security find-generic-password -s "$GH_ITEM" -w 2>/dev/null) && [ -n "$tok" ]; then
-    export GH_TOKEN="$tok"; env+=(--secret-env GH_TOKEN=GH_TOKEN)
-  fi
+  # GitHub: GH_ITEM's token as GH_TOKEN, and the token of each Keychain item
+  # named GH_ITEM-OWNER as GH_TOKEN_OWNER. shared/bin/gh picks one by owner.
+  while IFS= read -r item; do
+    var=${item#"$GH_ITEM"}
+    var=GH_TOKEN$(printf '%s' "$var" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')
+    tok=$(security find-generic-password -s "$item" -w 2>/dev/null) || continue
+    [ -n "$tok" ] || continue
+    export "$var=$tok"; env+=(--secret-env "$var=$var")
+  done < <(security dump-keychain 2>/dev/null \
+    | sed -n 's/^ *"svce"<blob>="\('"$GH_ITEM"'\(-[A-Za-z0-9_.-]\{1,\}\)\{0,1\}\)"$/\1/p' | sort -u)
   set -- smolvm machine exec --name "$name" -it -u "$user" -w "$dir" "${env[@]}" -- "$@"
 
   # In tmux, the window is named NAME-LABEL (cc-api-claude, cc-api-sh) until the
