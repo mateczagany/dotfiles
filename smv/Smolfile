@@ -3,7 +3,7 @@ image = "eclipse-temurin:21-jdk"     # Ubuntu 26.04 with Temurin 21 in /opt/java
 net = true
 net_backend = "virtio-net"           # a real eth0, for containers on Docker's bridge network
 cpus = 16
-memory = 32768
+memory = 8192                        # MiB; a "NAME memory=MIB" line in machines.local gives a group another amount
 storage = 60                         # GiB, sparse: images, ~/.m2, ~/.gradle
 docker_socket = true                 # a docker client on the Mac can drive this machine's daemon
 volumes = ["/var/lib/docker", "/var/lib/containerd"]   # Docker's data on the machine's disk (v1.28.1+)

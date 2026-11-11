@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# smv: one smolvm machine per git repo, Claude Code inside it.
+# smv: one smolvm machine per git repo or group of repos, Claude Code inside it.
 # usage: smv claude|sh|root|up|stop|rm|state [DIR] [ARGS] · smv ls · smv stop-all
 set -euo pipefail
 
 CFG="${SMV_CONFIG:-$HOME/.config/smv}"
 TOKEN_ITEM="${SMV_TOKEN_ITEM:-claude-code-oauth}"   # Keychain item holding the token
 GH_ITEM="${SMV_GH_ITEM:-github-readonly}"           # optional: read-only GitHub token
+# Mounts a machine is configured with. One with more doesn't start: with this
+# Smolfile, smolvm 1.34 boots with 14 and crashes with 15. Mounts past this
+# number are attached after each start, which has no such limit.
+MAX_MOUNTS="${SMV_MAX_MOUNTS:-12}"
 
 die() { printf 'smv: %s\n' "$*" >&2; exit 1; }
 
@@ -17,7 +21,60 @@ repo_root() {
   (cd "$(dirname "$common")" && pwd -P)
 }
 
-machine_name() { printf 'cc-%s' "$(basename "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-')"; }
+# Machine groups, from machines.local, which is git-ignored: a line "NAME PATH"
+# puts every repo that is PATH or inside it in one machine, cc-NAME. PATH can be
+# a glob, and a NAME can have several lines. Prints NAME<tab>FOLDER for each
+# folder that exists. A line "NAME memory=MIB" sets that machine's memory instead.
+GROUPS_FILE="$CFG/machines.local"
+
+group_folders() {
+  local name pat p
+  [ -f "$GROUPS_FILE" ] || return 0
+  while read -r name pat; do
+    case "$name" in ''|'#'*) continue ;; esac
+    case "$pat" in memory=*) continue ;; esac
+    pat=${pat/#\~/$HOME}
+    while IFS= read -r p; do
+      if [ -d "$p" ]; then printf '%s\t%s\n' "$name" "${p%/}"; fi
+    done < <(compgen -G "$pat" | sort)
+  done < "$GROUPS_FILE"
+}
+
+# The group ROOT is in, or nothing.
+group_of() {  # ROOT
+  group_folders | awk -F'\t' -v r="$1/" '!found && index(r, $2 "/") == 1 { print $1; found = 1 }'
+}
+
+# The memory in MiB a "NAME memory=MIB" line gives ROOT's group. Prints nothing
+# without one, and the machine gets the Smolfile's amount.
+group_memory() {  # ROOT
+  local g name val mem=
+  g=$(group_of "$1")
+  [ -n "$g" ] || return 0
+  while read -r name val; do
+    if [ "$name" = "$g" ]; then
+      case "$val" in memory=*) mem=${val#memory=} ;; esac
+    fi
+  done < "$GROUPS_FILE"
+  printf '%s\n' "$mem"
+}
+
+machine_name() {  # ROOT
+  local g
+  g=$(group_of "$1")
+  printf 'cc-%s' "$(basename "${g:-$1}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-')"
+}
+
+# The folders ROOT's machine has read-write: its group's, or ROOT alone.
+roots() {  # ROOT
+  local g
+  g=$(group_of "$1")
+  if [ -n "$g" ]; then
+    group_folders | awk -F'\t' -v g="$g" '$1 == g && !seen[$2]++ { print $2 }'
+  else
+    printf '%s\n' "$1"
+  fi
+}
 
 state() { smolvm machine status --name "$1" --json 2>/dev/null | jq -r '.state // empty' || true; }
 
@@ -44,10 +101,14 @@ memory_dir() {  # ROOT
   if [ "${#key}" -le 200 ]; then printf '%s/.claude/projects/%s/memory\n' "$HOME" "$key"; fi
 }
 
-# Mounts every machine gets besides its repo, one HOST:GUEST:MODE per line.
+# The mounts ROOT's machine should have, one HOST:GUEST:MODE per line. The order
+# counts twice. A machine is configured with the first MAX_MOUNTS, so what its
+# first start needs comes before a group's many folders. And a folder comes
+# before the ones inside it, since attaching it later would cover them.
 wanted() {  # ROOT
-  local root=$1 mode list line mem scope n=0 i j skip
-  local -a paths modes
+  local root=$1 mode list line mem scope roots r m n=0 i j skip late after=
+  local -a paths modes lates
+  roots=$(roots "$root")
   printf '%s\n' "$CFG/shared:/opt/smv:ro" "$HOME/.claude/skills:/opt/claude-skills:ro"
   # Claude's memory for this repo, shared with Claude on the Mac; setup.d/memory.sh
   # links it into ~/.claude in the machine.
@@ -71,11 +132,20 @@ wanted() {  # ROOT
           case "$root/" in "$scope"/*) ;; *) continue ;; esac
         fi
         line=${line%/}
-        case "$line/" in "$root"/*) continue ;; esac   # the repo itself, or inside it
+        # Leave out a folder the machine has read-write already, and a read-write
+        # one inside it. A read-only one inside it stays read-only.
+        skip= late=
+        while IFS= read -r r; do
+          case "$line/" in
+            "$r/") skip=1 ;;
+            "$r"/*) if [ "$mode" = ro ]; then late=1; else skip=1; fi ;;
+          esac
+        done <<<"$roots"
+        [ -z "$skip" ] || continue
         # A folder that holds the repo stays: smolvm mounts it first, then the repo
         # read-write inside it.
         [ -d "$line" ] || continue
-        paths[n]=$line; modes[n]=$mode; n=$((n + 1))
+        paths[n]=$line; modes[n]=$mode; lates[n]=$late; n=$((n + 1))
       done < "$list"
     done
   done
@@ -89,8 +159,13 @@ wanted() {  # ROOT
         "${paths[j]}"/*) skip=1 ;;
       esac
     done
-    [ -n "$skip" ] || printf '%s\n' "${paths[i]}:${paths[i]}:${modes[i]}"
+    [ -z "$skip" ] || continue
+    m="${paths[i]}:${paths[i]}:${modes[i]}"
+    if [ -n "${lates[i]}" ]; then after="$after$m"$'\n'; else printf '%s\n' "$m"; fi
   done
+  # The machine's own folders, then the read-only ones inside them.
+  while IFS= read -r r; do printf '%s\n' "$r:$r:rw"; done <<<"$roots"
+  printf '%s' "$after"
 }
 
 # Guest paths NAME mounts now: its configured ones, plus any attached while it runs.
@@ -101,10 +176,12 @@ mounted() {  # NAME
   smolvm machine mount ls --name "$1" --json 2>/dev/null | jq -r '.[].target' 2>/dev/null || true
 }
 
-# Give NAME the wanted mounts it lacks: configured if stopped, attached until it stops if running.
+# Give NAME the wanted mounts it lacks. Stopped: configured, up to MAX_MOUNTS.
+# Running: attached until it stops.
 sync_mounts() {  # ROOT NAME
-  local root=$1 name=$2 have m guest covered
+  local root=$1 name=$2 have m guest covered count
   have=$(mounted "$name")
+  count=$(grep -c . <<<"$have" || true)
   while IFS= read -r m; do
     guest=${m#*:}; guest=${guest%:*}
     grep -qxF -- "$guest" <<<"$have" && continue
@@ -117,37 +194,57 @@ sync_mounts() {  # ROOT NAME
         continue
       fi
       echo "smv: mounting $guest in $name until it stops" >&2
-      smolvm machine mount add --name "$name" -v "${m%:rw}" >&2 \
+      smolvm machine mount add --name "$name" -v "${m%:rw}" >/dev/null \
         || echo "smv: could not mount $guest; smv stop, then open it again" >&2
-    else
+    elif [ "$count" -lt "$MAX_MOUNTS" ]; then
       echo "smv: adding mount $guest to $name" >&2
-      smolvm machine update --name "$name" -v "$m" >&2 \
-        || echo "smv: could not add $guest to $name" >&2
+      if smolvm machine update --name "$name" -v "$m" >&2; then
+        count=$((count + 1))
+      else
+        echo "smv: could not add $guest to $name" >&2
+      fi
     fi
   done < <(wanted "$root")
 }
 
-# Names come from the folder name alone, so two repos called flink would share cc-flink.
-# Stop if NAME exists but was made for another folder.
+# Names come from the folder or group name alone, so two repos called api would
+# share cc-api. Stop if NAME exists but was made for another folder: it mounts
+# none of the folders ROOT's machine has read-write.
 check_owner() {  # ROOT NAME
-  local have
+  local have r
   [ -n "$(state "$2")" ] || return 0
   have=$(mounted "$2")
-  grep -qxF -- "$1" <<<"$have" && return 0
+  while IFS= read -r r; do
+    if grep -qxF -- "$r" <<<"$have"; then return 0; fi
+  done < <(roots "$1")
   die "$2 was made for another folder, so it doesn't mount $1; rename this folder, or delete that machine with: smolvm machine delete --name $2 --force"
 }
 
+# Give a stopped NAME the memory its group's memory= line asks for.
+sync_memory() {  # ROOT NAME
+  local want have
+  want=$(group_memory "$1")
+  [ -n "$want" ] || return 0
+  have=$(smolvm machine status --name "$2" --json 2>/dev/null | jq -r '.memory_mib // empty' || true)
+  if [ "$have" != "$want" ]; then
+    echo "smv: setting the memory of $2 to $want MiB" >&2
+    smolvm machine update --name "$2" --mem "$want" >&2 \
+      || echo "smv: could not set the memory of $2" >&2
+  fi
+}
+
 create() {  # ROOT NAME
-  local root=$1 name=$2 line m extra=()
+  local root=$1 name=$2 line m mem extra=()
   [ -f "$CFG/Smolfile" ] || die "missing $CFG/Smolfile"
   if [ -f "$CFG/repos/$name.init" ]; then          # per-repo toolchain, one command per line
     while IFS= read -r line; do
       case "$line" in ''|'#'*) ;; *) extra+=(--init "$line") ;; esac
     done < "$CFG/repos/$name.init"
   fi
-  while IFS= read -r m; do extra+=(-v "$m"); done < <(wanted "$root")
+  while IFS= read -r m; do extra+=(-v "$m"); done < <(wanted "$root" | head -n "$MAX_MOUNTS")
+  mem=$(group_memory "$root")
+  [ -z "$mem" ] || extra+=(--mem "$mem")
   smolvm machine create --name "$name" -s "$CFG/Smolfile" \
-    -v "$root:$root" \
     --init "git config --system user.name \"$(git -C "$root" config user.name)\"" \
     --init "git config --system user.email \"$(git -C "$root" config user.email)\"" \
     ${extra[@]+"${extra[@]}"}
@@ -165,13 +262,15 @@ up() {  # DIR -> prints the machine name once it answers
     create "$root" "$name" >&2 || die "could not create $name"
   else
     check_owner "$root" "$name"
-    sync_mounts "$root" "$name"                    # folders listed since it was made
   fi
   if [ "$(state "$name")" != running ]; then
+    sync_mounts "$root" "$name"                    # folders listed since it was made
+    sync_memory "$root" "$name"
     echo "smv: starting $name (a new machine's first start installs everything, a few minutes)" >&2
     smolvm machine start --name "$name" >&2 \
       || die "could not start $name; see: smolvm machine logs --name $name"
   fi
+  sync_mounts "$root" "$name"                      # and the ones it can't be configured with
   unlock
   for _ in $(seq 1 120); do
     if smolvm machine exec --name "$name" -- true >/dev/null 2>&1; then echo "$name"; return 0; fi
@@ -181,14 +280,14 @@ up() {  # DIR -> prints the machine name once it answers
 }
 
 in_vm() {  # DIR USER LABEL CMD...
-  local dir user=$2 label=$3 root name tok rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
+  local dir user=$2 label=$3 root name tok r inside= rc=0 env=(-e TERM=xterm-256color -e COLORTERM=truecolor)
   local -a restore
   dir=$(cd "$1" && pwd -P); shift 3
   root=$(repo_root "$dir")
-  case "$dir/" in
-    "$root"/*) ;;
-    *) die "$dir is outside $root, so the machine can't see it (git worktree move it under the repo)" ;;
-  esac
+  while IFS= read -r r; do
+    case "$dir/" in "$r"/*) inside=1 ;; esac
+  done < <(roots "$root")
+  [ -n "$inside" ] || die "$dir is outside $root, so the machine can't see it (git worktree move it under the repo)"
   name=$(up "$dir")
   # The tokens from Keychain, for Claude, gh and git over HTTPS in the machine.
   # --secret-env has smolvm read them from this environment, which keeps them
